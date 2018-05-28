@@ -51,6 +51,12 @@
   version = "v1.4.7"
 
 [[projects]]
+  branch = "develop"
+  name = "github.com/getamis/sirius"
+  packages = ["log"]
+  revision = "3169265a49d667869e59ae691e34056a3dd80d0d"
+
+[[projects]]
   name = "github.com/go-stack/stack"
   packages = ["."]
   revision = "259ab82a6cad3992b4e21ff5cac294ccb06474bc"
@@ -258,6 +264,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3378e836a21e74861d16f42aea4b2131b3b98a8d432d9908174ba880ef9df393"
+  inputs-digest = "715e8f2ba9adadd7365aab0507d93a29008ec51f44bb6a4c4e21db1b716176b7"
   solver-name = "gps-cdcl"
   solver-version = 1
