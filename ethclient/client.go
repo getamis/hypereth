@@ -50,7 +50,7 @@ func DialContext(ctx context.Context, endpoint string) (*client, error) {
 
 // NewClient creates a client that uses the given RPC client.
 func NewClient(c *rpc.Client) *client {
-	return &Client{c}
+	return &client{c}
 }
 
 // Close closes an existing RPC connection.
