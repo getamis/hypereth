@@ -22,6 +22,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	metrics "github.com/getamis/hypereth/cmd/hypereth/metrics-exporter"
 )
 
 var cfgFile string
@@ -51,6 +53,8 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports Persistent Flags, which, if defined here,
 	// will be global for your application.
+
+	RootCmd.AddCommand(metrics.PrometheusCommand)
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is .hypereth.yaml)")
 }
