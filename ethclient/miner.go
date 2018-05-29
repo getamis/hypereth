@@ -21,18 +21,10 @@ import "context"
 // StartMining starts mining operation.
 func (ec *client) StartMining(ctx context.Context) error {
 	var r []byte
-	err := ec.c.CallContext(ctx, &r, "miner_start", nil)
-	if err != nil {
-		return err
-	}
-	return err
+	return ec.c.CallContext(ctx, &r, "miner_start", nil)
 }
 
 // StopMining stops mining.
 func (ec *client) StopMining(ctx context.Context) error {
-	err := ec.c.CallContext(ctx, nil, "miner_stop", nil)
-	if err != nil {
-		return err
-	}
-	return err
+	return ec.c.CallContext(ctx, nil, "miner_stop", nil)
 }
