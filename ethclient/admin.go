@@ -35,7 +35,7 @@ func (ec *client) AddPeer(ctx context.Context, nodeURL string) error {
 // AdminPeers returns the number of connected peers.
 func (ec *client) AdminPeers(ctx context.Context) ([]*p2p.PeerInfo, error) {
 	var r []*p2p.PeerInfo
-	err := c.c.CallContext(ctx, &r, "admin_peers")
+	err := ec.c.CallContext(ctx, &r, "admin_peers")
 	if err != nil {
 		return nil, err
 	}
