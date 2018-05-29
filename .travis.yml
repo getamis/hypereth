@@ -1,0 +1,45 @@
+language: go
+
+go:
+  - 1.10
+
+services:
+  - docker
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+before_script:
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin quay.io/amis
+
+jobs:
+  include:
+    - stage: Lint
+      script:
+        - make lint
+    - stage: Build
+      script: make clean all
+      if: branch = develop AND type IN (pull_request)
+    - stage: Unit test
+      script:
+        - make test
+      if: branch = develop AND type IN (pull_request)
+    - stage: Integration test
+      script:
+        - make docker
+        - echo "Running integration test"
+      if: (branch IN (master)) AND (type IN (push, pull_request))
+    - stage: Release
+      script:
+        - make docker
+        - make docker.push
+      if: tag =~ ^v
+      env: REV="$TRAVIS_TAG"
+      deploy:
+        provider: releases
+        api_key: "$GITHUB_OAUTH_TOKEN"
+        skip_cleanup: true
+        on:
+          tags: true
