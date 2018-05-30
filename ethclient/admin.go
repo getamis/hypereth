@@ -25,11 +25,7 @@ import (
 // AddPeer connects to the given nodeURL.
 func (ec *client) AddPeer(ctx context.Context, nodeURL string) error {
 	var r bool
-	err := ec.c.CallContext(ctx, &r, "admin_addPeer", nodeURL)
-	if err != nil {
-		return err
-	}
-	return err
+	return ec.c.CallContext(ctx, &r, "admin_addPeer", nodeURL)
 }
 
 // AdminPeers returns the number of connected peers.
