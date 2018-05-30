@@ -4,11 +4,13 @@ else
 LINTER_IGNORE_DIRS := $(subst ./,,$(shell find . -name '.linterignore' -printf '%h\n' | sort -u))
 endif
 
+LINTER_PKG := gopkg.in/alecthomas/gometalinter.v2
+
 lint: linter-tools
-	@$(GOBIN)/gometalinter.v2 --vendor --skip="$(LINTER_IGNORE_DIRS)" --disable-all --deadline=10m --enable=vet --enable=gofmt --enable=misspell --enable=goconst --enable=unconvert --enable=gosimple --min-occurrences=6 ./...
+	@$(GOBIN)/$(notdir $(LINTER_PKG)) --vendor --skip="$(LINTER_IGNORE_DIRS)" --disable-all --deadline=10m --enable=vet --enable=gofmt --enable=misspell --enable=goconst --enable=unconvert --enable=gosimple --min-occurrences=6 ./...
 
 linter-tools: metalinter
-	@$(GOBIN)/gometalinter.v2 --install
+	@$(GOBIN)/$(notdir $(LINTER_PKG)) --install
 
 metalinter:
-	@go install gopkg.in/alecthomas/gometalinter.v2
+	@go get -u $(LINTER_PKG)
