@@ -1,7 +1,7 @@
 ifeq ($(HOST_OS), Darwin)
 LINTER_IGNORE_DIRS := $(subst ./,,$(shell find . -name '.linterignore' -print0 | xargs -0 -n1 dirname | sort -u))
 else
-LINTER_IGNORE_DIRS := $(subst ./,,$(shell find . -name '.linterignore' -printf '%h\n' | sort -u))
+LINTER_IGNORE_DIRS := $(subst ./,,$(shell find . -name '.linterignore' -print | sort -u))
 endif
 
 LINTER_PKG := gopkg.in/alecthomas/gometalinter.v2
