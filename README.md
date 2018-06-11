@@ -1,5 +1,10 @@
 # hypereth
 
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+[![Build Status](https://travis-ci.com/getamis/hypereth.svg?branch=master)](https://travis-ci.com/getamis/hypereth)
+[![codecov](https://codecov.io/gh/getamis/hypereth/branch/master/graph/badge.svg)](https://codecov.io/gh/getamis/hypereth)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/Naereen/StrapDown.js/graphs/commit-activity)
+
 The Ethereum ecosystem.
 
 ## Getting Started
@@ -10,7 +15,7 @@ The Ethereum ecosystem.
 
 * metrics-exporter
 
-A tool that exports metrics from an Ethereum client. For the details, please see [README](cmd/hypereth/metrics-exporter/README.md)
+  A tool that exports metrics from an Ethereum client. For the details, please see [README](cmd/hypereth/metrics-exporter/README.md)
 
 ### Installing
 
