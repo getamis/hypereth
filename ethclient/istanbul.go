@@ -28,7 +28,7 @@ import (
 )
 
 // Propose injects a new authorization candidate that the validator will attempt to push through.
-func (ec *client) ProposeValidator(ctx context.Context, address common.Address, auth bool) error {
+func (ec *Client) ProposeValidator(ctx context.Context, address common.Address, auth bool) error {
 	var r []byte
 	err := ec.c.CallContext(ctx, &r, "istanbul_propose", address, auth)
 	if err != nil {
@@ -52,7 +52,7 @@ func (addrs addresses) Swap(i, j int) {
 }
 
 // GetValidators retrieves the list of authorized validators at the specified block.
-func (ec *client) GetValidators(ctx context.Context, blockNumbers *big.Int) ([]common.Address, error) {
+func (ec *Client) GetValidators(ctx context.Context, blockNumbers *big.Int) ([]common.Address, error) {
 	var r []common.Address
 	err := ec.c.CallContext(ctx, &r, "istanbul_getValidators", toNumArg(blockNumbers))
 	if err == nil && r == nil {

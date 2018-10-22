@@ -23,18 +23,18 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// client defines typed wrappers for the Ethereum RPC API.
-type client struct {
+// Client defines typed wrappers for the Ethereum RPC API.
+type Client struct {
 	c *rpc.Client
 }
 
 // Dial connects a client to the given URL.
-func Dial(endpoint string) (*client, error) {
+func Dial(endpoint string) (*Client, error) {
 	return DialContext(context.Background(), endpoint)
 }
 
 // DialContext connects a client to the given URL with given context.
-func DialContext(ctx context.Context, endpoint string) (*client, error) {
+func DialContext(ctx context.Context, endpoint string) (*Client, error) {
 	if strings.HasPrefix(endpoint, "rpc:") || strings.HasPrefix(endpoint, "ipc:") {
 		// Backwards compatibility with geth < 1.5 which required
 		// these prefixes.
@@ -49,11 +49,11 @@ func DialContext(ctx context.Context, endpoint string) (*client, error) {
 }
 
 // NewClient creates a client that uses the given RPC client.
-func NewClient(c *rpc.Client) *client {
-	return &client{c}
+func NewClient(c *rpc.Client) *Client {
+	return &Client{c}
 }
 
 // Close closes an existing RPC connection.
-func (ec *client) Close() {
+func (ec *Client) Close() {
 	ec.c.Close()
 }

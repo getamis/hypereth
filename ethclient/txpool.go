@@ -20,10 +20,14 @@ import (
 	"context"
 )
 
-// Metrics gets the metrics.
-func (ec *Client) Metrics(ctx context.Context) (map[string]interface{}, error) {
+// TxPoolStatus returns the status of txpool.
+// {
+//   pending: 4954,
+//   queued: 166
+// }
+func (ec *Client) TxPoolStatus(ctx context.Context) (map[string]interface{}, error) {
 	r := make(map[string]interface{})
-	err := ec.c.CallContext(ctx, &r, "debug_metrics", true)
+	err := ec.c.CallContext(ctx, &r, "txpool_status")
 	if err != nil {
 		return nil, err
 	}

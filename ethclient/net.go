@@ -20,10 +20,12 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // NetworkID returns the network ID (also known as the chain ID) for this chain.
-func (ec *client) NetworkID(ctx context.Context) (*big.Int, error) {
+func (ec *Client) NetworkID(ctx context.Context) (*big.Int, error) {
 	version := new(big.Int)
 	var ver string
 	if err := ec.c.CallContext(ctx, &ver, "net_version"); err != nil {
@@ -33,4 +35,13 @@ func (ec *client) NetworkID(ctx context.Context) (*big.Int, error) {
 		return nil, fmt.Errorf("invalid net_version result %q", ver)
 	}
 	return version, nil
+}
+
+// PeerCount returns the number of peers.
+func (ec *Client) PeerCount(ctx context.Context) (uint64, error) {
+	var result hexutil.Uint64
+	if err := ec.c.CallContext(ctx, &result, "net_peerCount"); err != nil {
+		return uint64(0), err
+	}
+	return uint64(result), nil
 }
