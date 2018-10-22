@@ -63,7 +63,11 @@ var PrometheusCommand = &cobra.Command{
 
 		go gaugeMetricsCollector(ctx, func(key string, opts ...metrics.Option) metrics.Gauge {
 			return metricsRegistry.NewGauge(key, opts...)
-		}, client.Metrics, metricsPrefix)
+		},
+			getETHMetrics(ctx, client, period),
+			getBlockNumber(ctx, client, period),
+			getPeerCount(ctx, client, period),
+			getTxPoolStatus(ctx, client, period))
 
 		mux := http.NewServeMux()
 		mux.Handle(metricsPath, metricsRegistry)

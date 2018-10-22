@@ -18,14 +18,10 @@ package metrics
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/getamis/sirius/log"
 	"github.com/getamis/sirius/metrics"
-	"github.com/tidwall/gjson"
 )
 
 const (
@@ -34,7 +30,9 @@ const (
 
 type GaugeCreater func(key string, opts ...metrics.Option) metrics.Gauge
 
-func gaugeMetricsCollector(ctx context.Context, createGauge GaugeCreater, getMetrics func(context.Context) (map[string]interface{}, error), prefix string) error {
+type MetricsGetter func(results map[string]string)
+
+func gaugeMetricsCollector(ctx context.Context, createGauge GaugeCreater, metricGetters ...MetricsGetter) error {
 	gauges := make(map[string]metrics.Gauge)
 
 	ticker := time.NewTicker(period)
@@ -45,24 +43,10 @@ func gaugeMetricsCollector(ctx context.Context, createGauge GaugeCreater, getMet
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			m, err := getMetrics(ctx)
-			if err != nil {
-				log.Error("Failed to retrieve metrics", "err", err)
-				continue
-			}
-
-			rawJSON, _ := json.Marshal(m)
 			results := make(map[string]string)
-			expandJSON(gjson.Parse(string(rawJSON)), prefix, results, func(ks ...string) string {
-				var keys []string
-				for _, k := range ks {
-					if k != "" {
-						keys = append(keys, strings.ToLower(k))
-					}
-				}
-
-				return strings.Join(keys, metricsNameSeperator)
-			})
+			for _, getter := range metricGetters {
+				getter(results)
+			}
 
 			for key, value := range results {
 				var m metrics.Gauge
