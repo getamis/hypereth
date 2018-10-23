@@ -19,12 +19,12 @@ package ethclient
 import "context"
 
 // StartMining starts mining operation.
-func (ec *client) StartMining(ctx context.Context) error {
+func (ec *Client) StartMining(ctx context.Context) error {
 	var r []byte
 	return ec.c.CallContext(ctx, &r, "miner_start", nil)
 }
 
 // StopMining stops mining.
-func (ec *client) StopMining(ctx context.Context) error {
+func (ec *Client) StopMining(ctx context.Context) error {
 	return ec.c.CallContext(ctx, nil, "miner_stop", nil)
 }

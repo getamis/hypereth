@@ -37,11 +37,12 @@ const (
 )
 
 var (
-	host          string
-	port          int
-	ethEndpoint   string
-	period        time.Duration
-	metricsPrefix string
+	host        string
+	port        int
+	ethEndpoint string
+	period      time.Duration
+	namespace   string
+	labels      map[string]string
 )
 
 // PrometheusCommand represents the Prometheus metrics exporter
@@ -58,12 +59,17 @@ var PrometheusCommand = &cobra.Command{
 		defer client.Close()
 
 		metricsRegistry := metrics.NewPrometheusRegistry()
+		metricsRegistry.SetNamespace(namespace)
+		metricsRegistry.AppendLabels(labels)
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		go gaugeMetricsCollector(ctx, func(key string, opts ...metrics.Option) metrics.Gauge {
-			return metricsRegistry.NewGauge(key, opts...)
-		}, client.Metrics, metricsPrefix)
+		go gaugeMetricsCollector(ctx, metricsRegistry.NewGauge,
+			getETHMetrics(ctx, client, period),
+			getBlockNumber(ctx, client, period),
+			getPeerCount(ctx, client, period),
+			getTxPoolStatus(ctx, client, period))
 
 		mux := http.NewServeMux()
 		mux.Handle(metricsPath, metricsRegistry)
@@ -95,5 +101,6 @@ func init() {
 	PrometheusCommand.Flags().IntVar(&port, "port", 9092, "The HTTP server listening port")
 	PrometheusCommand.Flags().StringVar(&ethEndpoint, "eth.endpoint", ":8546", "The Ethereum endpoint to connect to")
 	PrometheusCommand.Flags().DurationVar(&period, "period", 5*time.Second, "The metrics update period")
-	PrometheusCommand.Flags().StringVar(&metricsPrefix, "prefix", "", "The metrics name prefix")
+	PrometheusCommand.Flags().StringVar(&namespace, "namespace", "", "The namespace of metrics")
+	PrometheusCommand.Flags().StringToStringVar(&labels, "labels", map[string]string{}, "The labels of metrics. For example: k1=v1,k2=v2")
 }

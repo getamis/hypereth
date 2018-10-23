@@ -21,7 +21,7 @@ import (
 )
 
 // Metrics gets the metrics.
-func (ec *client) Metrics(ctx context.Context) (map[string]interface{}, error) {
+func (ec *Client) Metrics(ctx context.Context) (map[string]interface{}, error) {
 	r := make(map[string]interface{})
 	err := ec.c.CallContext(ctx, &r, "debug_metrics", true)
 	if err != nil {

@@ -23,13 +23,13 @@ import (
 )
 
 // AddPeer connects to the given nodeURL.
-func (ec *client) AddPeer(ctx context.Context, nodeURL string) error {
+func (ec *Client) AddPeer(ctx context.Context, nodeURL string) error {
 	var r bool
 	return ec.c.CallContext(ctx, &r, "admin_addPeer", nodeURL)
 }
 
 // AdminPeers returns the number of connected peers.
-func (ec *client) AdminPeers(ctx context.Context) ([]*p2p.PeerInfo, error) {
+func (ec *Client) AdminPeers(ctx context.Context) ([]*p2p.PeerInfo, error) {
 	var r []*p2p.PeerInfo
 	err := ec.c.CallContext(ctx, &r, "admin_peers")
 	if err != nil {
@@ -39,7 +39,7 @@ func (ec *client) AdminPeers(ctx context.Context) ([]*p2p.PeerInfo, error) {
 }
 
 // NodeInfo gathers and returns a collection of metadata known about the host.
-func (ec *client) NodeInfo(ctx context.Context) (*p2p.PeerInfo, error) {
+func (ec *Client) NodeInfo(ctx context.Context) (*p2p.PeerInfo, error) {
 	var r *p2p.PeerInfo
 	err := ec.c.CallContext(ctx, &r, "admin_nodeInfo")
 	if err != nil {
