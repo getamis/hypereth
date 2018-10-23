@@ -15,7 +15,7 @@ The Ethereum ecosystem.
 
 * metrics-exporter
 
-  A tool that exports metrics from an Ethereum client. For the details, please see [README](cmd/hypereth/metrics-exporter/README.md)
+  A tool that exports metrics from an Ethereum client. For the details, please see [README](cmd/metrics-exporter/README.md)
 
 ### Installing
 

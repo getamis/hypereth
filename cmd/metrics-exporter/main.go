@@ -14,17 +14,8 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package metrics
+package main
 
-import "github.com/tidwall/gjson"
-
-func expandJSON(value gjson.Result, prefix string, results map[string]string, prefixProcessor func(...string) string) {
-	if !value.IsObject() {
-		results[prefix] = value.String()
-	} else {
-		value.ForEach(func(key, value gjson.Result) bool {
-			expandJSON(value, prefixProcessor(prefix, key.String()), results, prefixProcessor)
-			return true
-		})
-	}
+func main() {
+	Execute()
 }
