@@ -33,7 +33,7 @@ PHONY: help
 help:
 	@echo  'Generic targets:'
 	@echo  '  all                           - Build all targets marked with [*]'
-	@echo  '* hypereth                      - Build hypereth'
+	@echo  '* metrics-exporter              - Build metrics-exporter'
 	@echo  ''
 	@echo  'Docker targets:'
 	@echo  '  docker                        - Build hypereth docker image'
