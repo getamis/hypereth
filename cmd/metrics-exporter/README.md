@@ -27,20 +27,18 @@ See [README](../../../README.md)
 ## Usage
 
 ```
-$ hypereth metrics-exporter --help
+$ metrics-exporter --help
 The Ethereum metrics exporter for Prometheus.
 
 Usage:
-  hypereth metrics-exporter [flags]
+  metrics-exporter [flags]
 
 Flags:
-      --eth.endpoint string   The Ethereum endpoint to connect to (default ":8546")
-  -h, --help                  help for metrics-exporter
-      --host string           The HTTP server listening address (default "localhost")
-      --period duration       The metrics update period (default 5s)
-      --port int              The HTTP server listening port (default 9092)
-      --prefix string         The metrics name prefix
-
-Global Flags:
-      --config string   config file (default is .hypereth.yaml)
+      --eth.endpoint string     The Ethereum endpoint to connect to (default ":8546")
+  -h, --help                    help for metrics-exporter
+      --host string             The HTTP server listening address (default "localhost")
+      --labels stringToString   The labels of metrics. For example: k1=v1,k2=v2 (default [])
+      --namespace string        The namespace of metrics
+      --period duration         The metrics update period (default 5s)
+      --port int                The HTTP server listening port (default 9092)
 ```

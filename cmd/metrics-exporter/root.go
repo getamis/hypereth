@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package metrics
+package main
 
 import (
 	"context"
@@ -45,8 +45,17 @@ var (
 	labels      map[string]string
 )
 
-// PrometheusCommand represents the Prometheus metrics exporter
-var PrometheusCommand = &cobra.Command{
+// Execute adds all child commands to the root command sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	if err := RootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+}
+
+// RootCmd represents the Prometheus metrics exporter
+var RootCmd = &cobra.Command{
 	Use:   "metrics-exporter",
 	Short: "The Ethereum metrics exporter for Prometheus",
 	Long:  `The Ethereum metrics exporter for Prometheus.`,
@@ -97,10 +106,10 @@ var PrometheusCommand = &cobra.Command{
 }
 
 func init() {
-	PrometheusCommand.Flags().StringVar(&host, "host", "localhost", "The HTTP server listening address")
-	PrometheusCommand.Flags().IntVar(&port, "port", 9092, "The HTTP server listening port")
-	PrometheusCommand.Flags().StringVar(&ethEndpoint, "eth.endpoint", ":8546", "The Ethereum endpoint to connect to")
-	PrometheusCommand.Flags().DurationVar(&period, "period", 5*time.Second, "The metrics update period")
-	PrometheusCommand.Flags().StringVar(&namespace, "namespace", "", "The namespace of metrics")
-	PrometheusCommand.Flags().StringToStringVar(&labels, "labels", map[string]string{}, "The labels of metrics. For example: k1=v1,k2=v2")
+	RootCmd.Flags().StringVar(&host, "host", "localhost", "The HTTP server listening address")
+	RootCmd.Flags().IntVar(&port, "port", 9092, "The HTTP server listening port")
+	RootCmd.Flags().StringVar(&ethEndpoint, "eth.endpoint", ":8546", "The Ethereum endpoint to connect to")
+	RootCmd.Flags().DurationVar(&period, "period", 5*time.Second, "The metrics update period")
+	RootCmd.Flags().StringVar(&namespace, "namespace", "", "The namespace of metrics")
+	RootCmd.Flags().StringToStringVar(&labels, "labels", map[string]string{}, "The labels of metrics. For example: k1=v1,k2=v2")
 }
