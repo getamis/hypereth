@@ -108,7 +108,7 @@ var RootCmd = &cobra.Command{
 func init() {
 	RootCmd.Flags().StringVar(&host, "host", "localhost", "The HTTP server listening address")
 	RootCmd.Flags().IntVar(&port, "port", 9092, "The HTTP server listening port")
-	RootCmd.Flags().StringVar(&ethEndpoint, "eth.endpoint", ":8546", "The Ethereum endpoint to connect to")
+	RootCmd.Flags().StringVar(&ethEndpoint, "eth.url", "ws://127.0.0.1:8546", "The Ethereum endpoint to connect to")
 	RootCmd.Flags().DurationVar(&period, "period", 5*time.Second, "The metrics update period")
 	RootCmd.Flags().StringVar(&namespace, "namespace", "", "The namespace of metrics")
 	RootCmd.Flags().StringToStringVar(&labels, "labels", map[string]string{}, "The labels of metrics. For example: k1=v1,k2=v2")
