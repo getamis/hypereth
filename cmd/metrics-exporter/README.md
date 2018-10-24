@@ -14,7 +14,7 @@ Please note that you
 
 * [go-ethereum](https://github.com/ethereum/go-ethereum)
 
-  > Make sure the client is running with `--metrics` and the [debug](https://github.com/ethereum/go-ethereum/wiki/Management-APIs#debug) API is supported.
+  > Make sure the client is running with `--metrics` and the [debug](https://github.com/ethereum/go-ethereum/wiki/Management-APIs#debug), [admin](https://github.com/ethereum/go-ethereum/wiki/Management-APIs#admin), [txpool](https://github.com/ethereum/go-ethereum/wiki/Management-APIs#txpool) API is supported.
 
 ## Installing
 
