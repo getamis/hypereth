@@ -20,12 +20,41 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // AddPeer connects to the given nodeURL.
 func (ec *Client) AddPeer(ctx context.Context, nodeURL string) error {
 	var r bool
 	return ec.c.CallContext(ctx, &r, "admin_addPeer", nodeURL)
+}
+
+// BatchAddPeer performs batch add remote peers.
+func (ec *Client) BatchAddPeer(ctx context.Context, urls []string) error {
+	if len(urls) == 0 {
+		return nil
+	}
+	// Construct batch requests
+	method := "admin_addPeer"
+	reqs := make([]rpc.BatchElem, len(urls))
+	for i, url := range urls {
+		reqs[i] = rpc.BatchElem{
+			Method: method,
+			Args:   []interface{}{url},
+		}
+	}
+	// Batch calls
+	err := ec.c.BatchCallContext(ctx, reqs)
+	if err != nil {
+		return err
+	}
+	// Ensure all requests are ok
+	for _, req := range reqs {
+		if req.Error != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AdminPeers returns the number of connected peers.
