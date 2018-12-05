@@ -44,11 +44,11 @@ type Client struct {
 	rpcClients []*rpc.Client
 }
 
-func New(opts ...Option) (mc *Client, err error) {
-	mc = &Client{}
-
+func New(opts ...Option) (*Client, error) {
+	var err error
+	mc := &Client{}
 	// graceful shutdown other rpc clients
-	defer func(mc *Client) {
+	defer func() {
 		if err != nil {
 			for _, c := range mc.rpcClients {
 				if c != nil {
@@ -56,21 +56,24 @@ func New(opts ...Option) (mc *Client, err error) {
 				}
 			}
 		}
-	}(mc)
+	}()
 
 	for _, opt := range opts {
-		if err := opt(mc); err != nil {
+		err = opt(mc)
+		if err != nil {
 			return nil, err
 		}
 	}
 	if len(mc.ethURLs) == 0 {
-		return nil, ErrNoEthClient
+		err = ErrNoEthClient
+		return nil, err
 	}
 	log.Info("Create Client", "urls", mc.ethURLs)
 	mc.rpcClients = make([]*rpc.Client, len(mc.ethURLs))
 	for i, rawURL := range mc.ethURLs {
 		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-		c, err := rpc.DialContext(ctx, rawURL)
+		var c *rpc.Client
+		c, err = rpc.DialContext(ctx, rawURL)
 		if err != nil {
 			log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
 			cancel()
