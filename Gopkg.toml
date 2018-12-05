@@ -37,6 +37,10 @@
   name = "github.com/ethereum/go-ethereum"
   version = "1.8.17"
 
+[[constraint]]
+  name = "github.com/hashicorp/consul"
+  version = "1.3.0"
+
 [prune]
   go-tests = true
   unused-packages = true
