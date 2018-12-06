@@ -45,28 +45,14 @@ type Client struct {
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
-	var newError error
 	mc := &Client{}
-	// graceful shutdown other rpc clients
-	defer func() {
-		if newError != nil {
-			for _, c := range mc.rpcClients {
-				if c != nil {
-					c.Close()
-				}
-			}
-		}
-	}()
-
 	for _, opt := range opts {
-		newError = opt(mc)
-		if newError != nil {
-			return nil, newError
+		if err := opt(mc); err != nil {
+			return nil, err
 		}
 	}
 	if len(mc.ethURLs) == 0 {
-		newError = ErrNoEthClient
-		return nil, newError
+		return nil, ErrNoEthClient
 	}
 
 	log.Debug("Create multiclient", "urls", mc.ethURLs)
@@ -86,14 +72,21 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		}(ctx, rawURL, i)
 	}
 
+	var dialErr error
 	for i := 0; i < len(mc.ethURLs); i++ {
 		err := <-errCh
 		if err != nil {
-			newError = err
+			dialErr = err
 		}
 	}
-	if newError != nil {
-		return nil, newError
+	if dialErr != nil {
+		// graceful shutdown other rpc clients
+		for _, c := range mc.rpcClients {
+			if c != nil {
+				c.Close()
+			}
+		}
+		return nil, dialErr
 	}
 	return mc, nil
 }
