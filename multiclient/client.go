@@ -450,33 +450,78 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	return nil
 }
 
-func (mc *Client) CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error {
-	fns := make([]postFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
-		fns[i] = func(ctx context.Context) error {
-			return c.CallContext(ctx, result, method, args...)
+// CallContext performs a JSON-RPC call with the given arguments. If the context is
+// canceled before the call has successfully returned, CallContext returns immediately.
+//
+// The result must be a pointer so that package json can unmarshal into it. You
+// can also pass nil, in which case the result is ignored.
+//
+// `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
+// Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
+func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result interface{}, method string, args ...interface{}) error {
+	var err error
+	if !isPostToAll {
+		fns := make([]getFn, len(mc.rpcClients))
+		for i, c := range mc.rpcClients {
+			fns[i] = func(ctx context.Context) (interface{}, error) {
+				err := c.CallContext(ctx, result, method, args...)
+				return nil, err
+			}
 		}
+		_, err = getFromAny(ctx, fns)
+	} else {
+		fns := make([]postFn, len(mc.rpcClients))
+		for i, c := range mc.rpcClients {
+			fns[i] = func(ctx context.Context) error {
+				return c.CallContext(ctx, result, method, args...)
+			}
+		}
+		err = postToAll(ctx, fns)
 	}
 
-	err := postToAll(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to call to any eth client", "err", err)
+		log.Warn("Failed to perform a JSON-RPC call on any eth client", "err", err)
 		return err
 	}
+
 	return nil
 }
 
-func (mc *Client) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
-	fns := make([]postFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
-		fns[i] = func(ctx context.Context) error {
-			return c.BatchCallContext(ctx, b)
+// BatchCall sends all given requests as a single batch and waits for the server
+// to return a response for all of them. The wait duration is bounded by the
+// context's deadline.
+//
+// In contrast to CallContext, BatchCallContext only returns errors that have occurred
+// while sending the request. Any error specific to a request is reported through the
+// Error field of the corresponding BatchElem.
+//
+// Note that batch calls may not be executed atomically on the server side.
+//
+// `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
+// Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
+func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rpc.BatchElem) error {
+	var err error
+	if !isPostToAll {
+		fns := make([]getFn, len(mc.rpcClients))
+		for i, c := range mc.rpcClients {
+			fns[i] = func(ctx context.Context) (interface{}, error) {
+				err := c.BatchCallContext(ctx, b)
+				return nil, err
+			}
 		}
+		_, err = getFromAny(ctx, fns)
+	} else {
+		fns := make([]postFn, len(mc.rpcClients))
+		for i, c := range mc.rpcClients {
+			fns[i] = func(ctx context.Context) error {
+				return c.BatchCallContext(ctx, b)
+			}
+		}
+		err = postToAll(ctx, fns)
 	}
 
-	err := postToAll(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to batch call to any eth client", "err", err)
+		log.Warn("Failed to perform batch JSON-RPC calls on any eth client", "err", err)
 		return err
 	}
 	return nil
