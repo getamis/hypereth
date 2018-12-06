@@ -44,12 +44,12 @@ type Client struct {
 	rpcClients []*rpc.Client
 }
 
-func New(opts ...Option) (*Client, error) {
-	var err error
+func New(ctx context.Context, opts ...Option) (*Client, error) {
+	var newError error
 	mc := &Client{}
 	// graceful shutdown other rpc clients
 	defer func() {
-		if err != nil {
+		if newError != nil {
 			for _, c := range mc.rpcClients {
 				if c != nil {
 					c.Close()
@@ -59,30 +59,42 @@ func New(opts ...Option) (*Client, error) {
 	}()
 
 	for _, opt := range opts {
-		err = opt(mc)
-		if err != nil {
-			return nil, err
+		newError = opt(mc)
+		if newError != nil {
+			return nil, newError
 		}
 	}
 	if len(mc.ethURLs) == 0 {
-		err = ErrNoEthClient
-		return nil, err
-	}
-	log.Info("Create Client", "urls", mc.ethURLs)
-	mc.rpcClients = make([]*rpc.Client, len(mc.ethURLs))
-	for i, rawURL := range mc.ethURLs {
-		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-		var c *rpc.Client
-		c, err = rpc.DialContext(ctx, rawURL)
-		if err != nil {
-			log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
-			cancel()
-			return nil, err
-		}
-		cancel()
-		mc.rpcClients[i] = c
+		newError = ErrNoEthClient
+		return nil, newError
 	}
 
+	log.Debug("Create multiclient", "urls", mc.ethURLs)
+
+	mc.rpcClients = make([]*rpc.Client, len(mc.ethURLs))
+	errCh := make(chan error, len(mc.ethURLs))
+	for i, rawURL := range mc.ethURLs {
+		go func(ctx context.Context, rawURL string, i int) {
+			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+			c, err := rpc.DialContext(ctx, rawURL)
+			if err != nil {
+				log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
+			}
+			mc.rpcClients[i] = c
+			errCh <- err
+		}(ctx, rawURL, i)
+	}
+
+	for i := 0; i < len(mc.ethURLs); i++ {
+		err := <-errCh
+		if err != nil {
+			newError = err
+		}
+	}
+	if newError != nil {
+		return nil, newError
+	}
 	return mc, nil
 }
 
