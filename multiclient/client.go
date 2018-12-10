@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/getamis/sirius/log"
 )
@@ -67,10 +68,12 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 			defer cancel()
 			c, err := rpc.DialContext(ctx, rawURL)
-			if err != nil {
+			if err == nil {
+				log.Info("Connect to ethclient successfully", "url", rawURL)
+				mc.rpcClientMap.Set(rawURL, c)
+			} else {
 				log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
 			}
-			mc.rpcClientMap.Set(rawURL, c)
 			errCh <- err
 		}(ctx, rawURL)
 	}
@@ -535,6 +538,56 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 		return err
 	}
 	return nil
+}
+
+// Subscribe API
+
+// SubscribeNewHead subscribes to notifications about the current blockchain head
+// on the given channel.
+func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	clientsMap := mc.rpcClientMap.Map()
+	lens := len(clientsMap)
+	if lens == 0 {
+		return nil, ErrNoEthClient
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	for url := range clientsMap {
+		go mc.subscribeNewHead(cctx, url, ch)
+	}
+
+	// TODO: handle new clients comes
+	return event.NewSubscription(func(unsub <-chan struct{}) error {
+		<-unsub
+		cancel()
+		return nil
+	}), nil
+}
+
+func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *types.Header) error {
+	for {
+		rc := mc.rpcClientMap.Get(url)
+		if rc == nil {
+			return nil
+		}
+
+		// retry subscribe after retryPeriod
+		defer time.Sleep(retryPeriod)
+
+		c := ethclient.NewClient(rc)
+		sub, err := c.SubscribeNewHead(ctx, ch)
+		if err != nil {
+			log.Warn("Failed to subscribe new head", "url", url, "err", err)
+			continue
+		}
+		select {
+		case err := <-sub.Err():
+			log.Warn("Failed during subscription", "url", url, "err", err)
+			continue
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 type getFn func(ctx context.Context) (interface{}, error)
