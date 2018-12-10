@@ -29,18 +29,22 @@ type Option func(*Client) error
 
 func EthURLs(ethURLs []string) Option {
 	return func(mc *Client) error {
-		mc.ethURLs = append(mc.ethURLs, ethURLs...)
+		for _, url := range ethURLs {
+			mc.rpcClientMap.Set(url, nil)
+		}
 		return nil
 	}
 }
 
-func ConsulDiscocvery(rawURL, serviceID, serviceScheme string) Option {
+func ConsulDiscovery(rawURL, serviceID, serviceScheme string) Option {
 	return func(mc *Client) error {
 		urls, err := getEthURLsFromConsul(rawURL, serviceID, serviceScheme)
 		if err != nil {
 			return err
 		}
-		mc.ethURLs = append(mc.ethURLs, urls...)
+		for _, url := range urls {
+			mc.rpcClientMap.Set(url, nil)
+		}
 		return nil
 	}
 }
