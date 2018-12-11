@@ -89,3 +89,16 @@ func (m *Map) Map() map[string]*rpc.Client {
 	}
 	return newMap
 }
+
+func (m *Map) Keys() []string {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	urls := make([]string, len(m.m))
+	index := 0
+	for k := range m.m {
+		urls[index] = k
+		index++
+	}
+	return urls
+}
