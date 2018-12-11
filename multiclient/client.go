@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/getamis/sirius/log"
 )
@@ -37,55 +38,56 @@ const (
 var (
 	ErrInvalidTypeCast = errors.New("invalid type cast")
 	ErrNoEthClient     = errors.New("no eth client")
+
+	retryPeriod = 10 * time.Second
 )
 
 type Client struct {
-	ethURLs    []string
-	rpcClients []*rpc.Client
+	rpcClientMap *Map
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
-	mc := &Client{}
+	mc := &Client{
+		rpcClientMap: NewMap(),
+	}
 	for _, opt := range opts {
 		if err := opt(mc); err != nil {
 			return nil, err
 		}
 	}
-	if len(mc.ethURLs) == 0 {
+
+	clients := mc.rpcClientMap.Map()
+	lens := len(clients)
+	if lens == 0 {
 		return nil, ErrNoEthClient
 	}
 
-	log.Debug("Create multiclient", "urls", mc.ethURLs)
-
-	mc.rpcClients = make([]*rpc.Client, len(mc.ethURLs))
-	errCh := make(chan error, len(mc.ethURLs))
-	for i, rawURL := range mc.ethURLs {
-		go func(ctx context.Context, rawURL string, i int) {
+	log.Debug("Create multiclient", "urls", lens)
+	errCh := make(chan error, lens)
+	for rawURL := range clients {
+		go func(ctx context.Context, rawURL string) {
 			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 			defer cancel()
 			c, err := rpc.DialContext(ctx, rawURL)
-			if err != nil {
+			if err == nil {
+				log.Info("Connect to ethclient successfully", "url", rawURL)
+				mc.rpcClientMap.Set(rawURL, c)
+			} else {
 				log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
 			}
-			mc.rpcClients[i] = c
 			errCh <- err
-		}(ctx, rawURL, i)
+		}(ctx, rawURL)
 	}
 
 	var dialErr error
-	for i := 0; i < len(mc.ethURLs); i++ {
+	for i := 0; i < lens; i++ {
 		err := <-errCh
 		if err != nil {
 			dialErr = err
 		}
 	}
 	if dialErr != nil {
-		// graceful shutdown other rpc clients
-		for _, c := range mc.rpcClients {
-			if c != nil {
-				c.Close()
-			}
-		}
+		mc.Close()
 		return nil, dialErr
 	}
 	return mc, nil
@@ -93,14 +95,16 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 // Close closes an existing RPC connection.
 func (mc *Client) Close() {
-	for _, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	for _, c := range clients {
 		c.Close()
 	}
 }
 
 func (mc *Client) EthClients() []*ethclient.Client {
-	ethClients := make([]*ethclient.Client, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	ethClients := make([]*ethclient.Client, len(clients))
+	for i, c := range clients {
 		ethClients[i] = ethclient.NewClient(c)
 	}
 	return ethClients
@@ -113,8 +117,12 @@ func (mc *Client) EthClients() []*ethclient.Client {
 // Note that loading full blocks requires two requests. Use HeaderByHash
 // if you don't need all transactions or uncle headers.
 func (mc *Client) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.BlockByHash(ctx, hash)
@@ -140,8 +148,12 @@ func (mc *Client) BlockByHash(ctx context.Context, hash common.Hash) (*types.Blo
 // Note that loading full blocks requires two requests. Use HeaderByNumber
 // if you don't need all transactions or uncle headers.
 func (mc *Client) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.BlockByNumber(ctx, number)
@@ -163,8 +175,12 @@ func (mc *Client) BlockByNumber(ctx context.Context, number *big.Int) (*types.Bl
 
 // HeaderByHash returns the block header with the given hash.
 func (mc *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.HeaderByHash(ctx, hash)
@@ -187,8 +203,12 @@ func (mc *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.He
 // HeaderByNumber returns a block header from the current canonical chain. If number is
 // nil, the latest known header is returned.
 func (mc *Client) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.HeaderByNumber(ctx, number)
@@ -216,9 +236,13 @@ type txResponse struct {
 
 // TransactionByHash returns the transaction with the given hash.
 func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, false, ErrNoEthClient
+	}
 	getFromAny := func(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
-		respCh := make(chan *txResponse, len(mc.rpcClients))
-		for _, c := range mc.rpcClients {
+		respCh := make(chan *txResponse, len(clients))
+		for _, c := range clients {
 			go func(ec *ethclient.Client) {
 				tx, isPending, err := ec.TransactionByHash(ctx, hash)
 				if err != nil {
@@ -229,7 +253,7 @@ func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *
 			}(ethclient.NewClient(c))
 		}
 		var resp *txResponse
-		for i := 0; i < len(mc.rpcClients); i++ {
+		for i := 0; i < len(clients); i++ {
 			resp = <-respCh
 			if resp.err == nil {
 				break
@@ -250,8 +274,12 @@ func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *
 // BalanceAt returns the wei balance of the given account.
 // The block number can be nil, in which case the balance is taken from the latest known block.
 func (mc *Client) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.BalanceAt(ctx, account, blockNumber)
@@ -274,8 +302,12 @@ func (mc *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 // CodeAt returns the contract code of the given account.
 // The block number can be nil, in which case the code is taken from the latest known block.
 func (mc *Client) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.CodeAt(ctx, account, blockNumber)
@@ -298,8 +330,12 @@ func (mc *Client) CodeAt(ctx context.Context, account common.Address, blockNumbe
 // NonceAt returns the account nonce of the given account.
 // The block number can be nil, in which case the nonce is taken from the latest known block.
 func (mc *Client) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return 0, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.NonceAt(ctx, account, blockNumber)
@@ -323,8 +359,12 @@ func (mc *Client) NonceAt(ctx context.Context, account common.Address, blockNumb
 
 // PendingBalanceAt returns the wei balance of the given account in the pending state.
 func (mc *Client) PendingBalanceAt(ctx context.Context, account common.Address) (*big.Int, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.PendingBalanceAt(ctx, account)
@@ -347,8 +387,12 @@ func (mc *Client) PendingBalanceAt(ctx context.Context, account common.Address) 
 // PendingNonceAt returns the account nonce of the given account in the pending state.
 // This is the nonce that should be used for the next transaction.
 func (mc *Client) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return 0, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.PendingNonceAt(ctx, account)
@@ -377,8 +421,12 @@ func (mc *Client) PendingNonceAt(ctx context.Context, account common.Address) (u
 // case the code is taken from the latest known block. Note that state from very old
 // blocks might not be available.
 func (mc *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.CallContract(ctx, msg, blockNumber)
@@ -401,8 +449,12 @@ func (mc *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockN
 // PendingCallContract executes a message call transaction using the EVM.
 // The state seen by the contract call is the pending state.
 func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
-	fns := make([]getFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return nil, ErrNoEthClient
+	}
+	fns := make([]getFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) (interface{}, error) {
 			return ec.PendingCallContract(ctx, msg)
@@ -427,8 +479,12 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	fns := make([]postFn, len(mc.rpcClients))
-	for i, c := range mc.rpcClients {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return ErrNoEthClient
+	}
+	fns := make([]postFn, len(clients))
+	for i, c := range clients {
 		ec := ethclient.NewClient(c)
 		fns[i] = func(ctx context.Context) error {
 			return ec.SendTransaction(ctx, tx)
@@ -452,10 +508,14 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 // `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
 // Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
 func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result interface{}, method string, args ...interface{}) error {
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return ErrNoEthClient
+	}
 	var err error
 	if !isPostToAll {
-		fns := make([]getFn, len(mc.rpcClients))
-		for i, c := range mc.rpcClients {
+		fns := make([]getFn, len(clients))
+		for i, c := range clients {
 			fns[i] = func(ctx context.Context) (interface{}, error) {
 				err := c.CallContext(ctx, result, method, args...)
 				return nil, err
@@ -463,8 +523,8 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 		}
 		_, err = getFromAny(ctx, fns)
 	} else {
-		fns := make([]postFn, len(mc.rpcClients))
-		for i, c := range mc.rpcClients {
+		fns := make([]postFn, len(clients))
+		for i, c := range clients {
 			fns[i] = func(ctx context.Context) error {
 				return c.CallContext(ctx, result, method, args...)
 			}
@@ -494,9 +554,13 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 // Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
 func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rpc.BatchElem) error {
 	var err error
+	clients := mc.rpcClientMap.List()
+	if len(clients) == 0 {
+		return ErrNoEthClient
+	}
 	if !isPostToAll {
-		fns := make([]getFn, len(mc.rpcClients))
-		for i, c := range mc.rpcClients {
+		fns := make([]getFn, len(clients))
+		for i, c := range clients {
 			fns[i] = func(ctx context.Context) (interface{}, error) {
 				err := c.BatchCallContext(ctx, b)
 				return nil, err
@@ -504,8 +568,8 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 		}
 		_, err = getFromAny(ctx, fns)
 	} else {
-		fns := make([]postFn, len(mc.rpcClients))
-		for i, c := range mc.rpcClients {
+		fns := make([]postFn, len(clients))
+		for i, c := range clients {
 			fns[i] = func(ctx context.Context) error {
 				return c.BatchCallContext(ctx, b)
 			}
@@ -518,6 +582,56 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 		return err
 	}
 	return nil
+}
+
+// Subscribe API
+
+// SubscribeNewHead subscribes to notifications about the current blockchain head
+// on the given channel.
+func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	clientsMap := mc.rpcClientMap.Map()
+	lens := len(clientsMap)
+	if lens == 0 {
+		return nil, ErrNoEthClient
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	for url := range clientsMap {
+		go mc.subscribeNewHead(cctx, url, ch)
+	}
+
+	// TODO: handle new clients comes
+	return event.NewSubscription(func(unsub <-chan struct{}) error {
+		<-unsub
+		cancel()
+		return nil
+	}), nil
+}
+
+func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *types.Header) error {
+	for {
+		rc := mc.rpcClientMap.Get(url)
+		if rc == nil {
+			return nil
+		}
+
+		// retry subscribe after retryPeriod
+		defer time.Sleep(retryPeriod)
+
+		c := ethclient.NewClient(rc)
+		sub, err := c.SubscribeNewHead(ctx, ch)
+		if err != nil {
+			log.Warn("Failed to subscribe new head", "url", url, "err", err)
+			continue
+		}
+		select {
+		case err := <-sub.Err():
+			log.Warn("Failed during subscription", "url", url, "err", err)
+			continue
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 type getFn func(ctx context.Context) (interface{}, error)
