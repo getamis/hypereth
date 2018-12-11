@@ -56,15 +56,15 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		}
 	}
 
-	clients := mc.rpcClientMap.Map()
-	lens := len(clients)
+	urls := mc.rpcClientMap.Keys()
+	lens := len(urls)
 	if lens == 0 {
 		return nil, ErrNoEthClient
 	}
 
 	log.Debug("Create multiclient", "urls", lens)
 	errCh := make(chan error, lens)
-	for rawURL := range clients {
+	for _, rawURL := range urls {
 		go func(ctx context.Context, rawURL string) {
 			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 			defer cancel()
