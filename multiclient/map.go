@@ -67,11 +67,11 @@ func (m *Map) List() []*rpc.Client {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	l := make([]*rpc.Client, len(m.m))
-	index := 0
+	l := []*rpc.Client{}
 	for _, v := range m.m {
-		l[index] = v
-		index++
+		if v != nil {
+			l = append(l, v)
+		}
 	}
 	return l
 }
@@ -81,9 +81,11 @@ func (m *Map) Map() map[string]*rpc.Client {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	newMap := make(map[string]*rpc.Client, len(m.m))
+	newMap := map[string]*rpc.Client{}
 	for k, v := range m.m {
-		newMap[k] = v
+		if v != nil {
+			newMap[k] = v
+		}
 	}
 	return newMap
 }
