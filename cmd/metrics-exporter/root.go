@@ -37,12 +37,14 @@ const (
 )
 
 var (
-	host        string
-	port        int
-	ethEndpoint string
-	period      time.Duration
-	namespace   string
-	labels      map[string]string
+	host         string
+	port         int
+	ethEndpoint  string
+	period       time.Duration
+	namespace    string
+	labels       map[string]string
+	dialDuration time.Duration
+	dialTimeout  time.Duration
 )
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -60,7 +62,7 @@ var RootCmd = &cobra.Command{
 	Short: "The Ethereum metrics exporter for Prometheus",
 	Long:  `The Ethereum metrics exporter for Prometheus.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := ethclient.Dial(ethEndpoint)
+		client, err := retryDialEthClient()
 		if err != nil {
 			log.Error("Failed to connect to Ethereum", "err", err)
 			return err
@@ -112,4 +114,29 @@ func init() {
 	RootCmd.Flags().DurationVar(&period, "period", 5*time.Second, "The metrics update period")
 	RootCmd.Flags().StringVar(&namespace, "namespace", "", "The namespace of metrics")
 	RootCmd.Flags().StringToStringVar(&labels, "labels", map[string]string{}, "The labels of metrics. For example: k1=v1,k2=v2")
+	RootCmd.Flags().DurationVar(&dialDuration, "dial.duration", 5*time.Second, "Retry duration to dial ethereum endpoint")
+	RootCmd.Flags().DurationVar(&dialTimeout, "dial.timeout", 0, "Retry timeout to dial ethereum endpoint (default: not retry)")
+}
+
+func retryDialEthClient() (*ethclient.Client, error) {
+	ticker := time.NewTicker(dialDuration)
+	defer ticker.Stop()
+	timeout := time.NewTimer(dialTimeout)
+	defer timeout.Stop()
+
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), dialDuration)
+		client, err := ethclient.DialContext(ctx, ethEndpoint)
+		cancel()
+		if err == nil {
+			return client, nil
+		}
+		log.Warn("Failed to dial ethereum endpoint and retry", "err", err)
+		select {
+		case <-ticker.C:
+			continue
+		case <-timeout.C:
+			return nil, err
+		}
+	}
 }
