@@ -515,18 +515,18 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 	var err error
 	if !isPostToAll {
 		fns := make([]getFn, len(clients))
-		for i, c := range clients {
+		for i := range clients {
 			fns[i] = func(ctx context.Context) (interface{}, error) {
-				err := c.CallContext(ctx, result, method, args...)
+				err := clients[i].CallContext(ctx, result, method, args...)
 				return nil, err
 			}
 		}
 		_, err = getFromAny(ctx, fns)
 	} else {
 		fns := make([]postFn, len(clients))
-		for i, c := range clients {
+		for i := range clients {
 			fns[i] = func(ctx context.Context) error {
-				return c.CallContext(ctx, result, method, args...)
+				return clients[i].CallContext(ctx, result, method, args...)
 			}
 		}
 		err = postToAll(ctx, fns)
@@ -560,18 +560,18 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 	}
 	if !isPostToAll {
 		fns := make([]getFn, len(clients))
-		for i, c := range clients {
+		for i := range clients {
 			fns[i] = func(ctx context.Context) (interface{}, error) {
-				err := c.BatchCallContext(ctx, b)
+				err := clients[i].BatchCallContext(ctx, b)
 				return nil, err
 			}
 		}
 		_, err = getFromAny(ctx, fns)
 	} else {
 		fns := make([]postFn, len(clients))
-		for i, c := range clients {
+		for i := range clients {
 			fns[i] = func(ctx context.Context) error {
-				return c.BatchCallContext(ctx, b)
+				return clients[i].BatchCallContext(ctx, b)
 			}
 		}
 		err = postToAll(ctx, fns)
