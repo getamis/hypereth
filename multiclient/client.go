@@ -612,25 +612,25 @@ func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *t
 	for {
 		rc := mc.rpcClientMap.Get(url)
 		if rc == nil {
+			log.Trace("EthClient has been removed", "url", url)
 			return nil
 		}
-
-		// retry subscribe after retryPeriod
-		defer time.Sleep(retryPeriod)
 
 		c := ethclient.NewClient(rc)
 		sub, err := c.SubscribeNewHead(ctx, ch)
 		if err != nil {
 			log.Warn("Failed to subscribe new head", "url", url, "err", err)
-			continue
+		} else {
+			select {
+			case err := <-sub.Err():
+				log.Warn("Failed during subscription", "url", url, "err", err)
+			case <-ctx.Done():
+				return nil
+			}
 		}
-		select {
-		case err := <-sub.Err():
-			log.Warn("Failed during subscription", "url", url, "err", err)
-			continue
-		case <-ctx.Done():
-			return nil
-		}
+		// retry subscribe after retryPeriod
+		time.Sleep(retryPeriod)
+		log.Trace("Retry to subscribe new head", "url", url)
 	}
 }
 
