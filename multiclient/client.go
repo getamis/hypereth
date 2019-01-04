@@ -643,17 +643,19 @@ func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *H
 			log.Warn("Failed to subscribe new head", "url", url, "err", err)
 		} else {
 		WAIT_NEW_HEADER:
-			select {
-			case header := <-headerCh:
-				ch <- &Header{
-					Client: rc,
-					Header: header,
+			for {
+				select {
+				case header := <-headerCh:
+					ch <- &Header{
+						Client: rc,
+						Header: header,
+					}
+				case err := <-sub.Err():
+					log.Warn("Failed during subscription", "url", url, "err", err)
+					break WAIT_NEW_HEADER
+				case <-ctx.Done():
+					return nil
 				}
-				goto WAIT_NEW_HEADER
-			case err := <-sub.Err():
-				log.Warn("Failed during subscription", "url", url, "err", err)
-			case <-ctx.Done():
-				return nil
 			}
 		}
 		// retry subscribe after retryPeriod
