@@ -513,6 +513,7 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 //
 // `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
 // Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
+// FIXME: The `result` may be overrode to wrong value because we share a `result` in all goroutines.
 func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result interface{}, method string, args ...interface{}) error {
 	clients := mc.rpcClientMap.List()
 	if len(clients) == 0 {
@@ -560,6 +561,7 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 //
 // `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
 // Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
+// FIXME: The result may be overrode to wrong value because we share a `result` in all goroutines.
 func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rpc.BatchElem) error {
 	var err error
 	clients := mc.rpcClientMap.List()
