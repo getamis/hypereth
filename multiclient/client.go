@@ -112,6 +112,10 @@ func (mc *Client) EthClients() []*ethclient.Client {
 	return ethClients
 }
 
+func (mc *Client) RPCClients() []*rpc.Client {
+	return mc.rpcClientMap.List()
+}
+
 // Blockchain Access
 
 // BlockByHash returns the given full block.
