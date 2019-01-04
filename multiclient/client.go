@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -43,7 +44,8 @@ var (
 )
 
 type Client struct {
-	rpcClientMap *Map
+	rpcClientMap       *Map
+	subscribeNewHeadWg sync.WaitGroup
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
@@ -589,10 +591,14 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 }
 
 // Subscribe API
+type Header struct {
+	*types.Header
+	*rpc.Client
+}
 
 // SubscribeNewHead subscribes to notifications about the current blockchain head
 // on the given channel.
-func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethereum.Subscription, error) {
 	clientsMap := mc.rpcClientMap.Map()
 	lens := len(clientsMap)
 	if lens == 0 {
@@ -608,11 +614,15 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header)
 	return event.NewSubscription(func(unsub <-chan struct{}) error {
 		<-unsub
 		cancel()
+		mc.subscribeNewHeadWg.Wait()
 		return nil
 	}), nil
 }
 
-func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *types.Header) error {
+func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *Header) error {
+	mc.subscribeNewHeadWg.Add(1)
+	defer mc.subscribeNewHeadWg.Done()
+
 	for {
 		rc := mc.rpcClientMap.Get(url)
 		if rc == nil {
@@ -620,12 +630,18 @@ func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *t
 			return nil
 		}
 
+		headerCh := make(chan *types.Header)
 		c := ethclient.NewClient(rc)
-		sub, err := c.SubscribeNewHead(ctx, ch)
+		sub, err := c.SubscribeNewHead(ctx, headerCh)
 		if err != nil {
 			log.Warn("Failed to subscribe new head", "url", url, "err", err)
 		} else {
 			select {
+			case header := <-headerCh:
+				ch <- &Header{
+					Client: rc,
+					Header: header,
+				}
 			case err := <-sub.Err():
 				log.Warn("Failed during subscription", "url", url, "err", err)
 			case <-ctx.Done():
