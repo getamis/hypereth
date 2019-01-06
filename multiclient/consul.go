@@ -38,7 +38,7 @@ func ConsulDiscovery(rawURL, serviceID, serviceScheme string) Option {
 		}
 		log.Info("EthClients from consul", "urls", urls)
 		for _, url := range urls {
-			mc.rpcClientMap.Set(url, nil)
+			mc.ClientMap().Set(url, nil)
 		}
 		return nil
 	}

@@ -18,11 +18,20 @@ package multiclient
 
 import (
 	"fmt"
+	"sort"
+	"sync"
 
 	"github.com/getamis/sirius/log"
-	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	clientset "k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -37,41 +46,18 @@ type KubeConfig struct {
 // There are two ways to access k8s cluster:
 // 1. `kubeconfig` is nil means will build in-cluster config with service account token assigned to k8s pod.
 // 2. `kubeconfig` is given means access k8s cluster with given apiserver address and KUBE-CONFIG file.
-// TODO: should watch the change of endpoints
-func K8sEndpointsDiscovery(namespace, service, scheme string, kubeconfig *KubeConfig) Option {
+func K8sEndpointsDiscovery(namespace, name, scheme string, kubeconfig *KubeConfig) Option {
 	return func(mc *Client) error {
 		kubeClient, err := createKubeClient(kubeconfig)
 		if err != nil {
 			return err
 		}
-		urls, err := getEthURLsFromK8s(kubeClient, namespace, service, scheme)
-		if err != nil {
-			return err
-		}
-		log.Info("EthClients from k8s cluster", "urls", urls)
-		for _, url := range urls {
-			mc.rpcClientMap.Set(url, nil)
-		}
+		lw := createEndpointsListWatch(kubeClient, namespace, name)
+		store := newEndpointStore(mc.ClientMap(), scheme)
+		reflector := cache.NewReflector(&lw, &v1.Endpoints{}, store, 0)
+		go reflector.Run(mc.Context().Done())
 		return nil
 	}
-}
-
-func getEthURLsFromK8s(kubeClient clientset.Interface, namespace, service, serviceScheme string) ([]string, error) {
-	e, err := kubeClient.CoreV1().Endpoints(namespace).Get(service, meta.GetOptions{})
-	if err != nil {
-		log.Error("Failed to get endpoints", "namespace", namespace, "name", service, "err", err)
-		return nil, err
-	}
-
-	ethURLs := make([]string, 0)
-	for _, s := range e.Subsets {
-		for _, addr := range s.Addresses {
-			for _, port := range s.Ports {
-				ethURLs = append(ethURLs, fmt.Sprintf("%s://%s:%d", serviceScheme, addr.IP, port.Port))
-			}
-		}
-	}
-	return ethURLs, nil
 }
 
 func createKubeClient(kubeconfig *KubeConfig) (clientset.Interface, error) {
@@ -108,4 +94,187 @@ func createKubeClient(kubeconfig *KubeConfig) (clientset.Interface, error) {
 	log.Trace("Communication with k8s api server successful")
 
 	return kubeClient, nil
+}
+
+func createEndpointsListWatch(kubeClient clientset.Interface, ns, name string) cache.ListWatch {
+	return cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			// list with specific name
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
+			return kubeClient.CoreV1().Endpoints(ns).List(opts)
+		},
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			// watch with specific name
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
+			return kubeClient.CoreV1().Endpoints(ns).Watch(opts)
+		},
+	}
+}
+
+// endpointStore implements the k8s.io/kubernetes/client-go/tools/cache.Store
+// interface. Instead of storing entire Kubernetes objects, it stores urls of ethclients
+// generated based on those objects.
+type endpointStore struct {
+	// Protects metrics
+	mutex        sync.RWMutex
+	scheme       string
+	endpoints    map[types.UID][]string
+	rpcClientMap *Map
+}
+
+func newEndpointStore(rpcClientMap *Map, scheme string) *endpointStore {
+	return &endpointStore{
+		scheme:       scheme,
+		endpoints:    map[types.UID][]string{},
+		rpcClientMap: rpcClientMap,
+	}
+}
+
+// Implementing k8s.io/kubernetes/client-go/tools/cache.Store interface
+
+func (s *endpointStore) Add(obj interface{}) error {
+	o, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+
+	endpoint := obj.(*v1.Endpoints)
+	urls := getEthURLsFromK8sEndpoint(endpoint, s.scheme)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for _, url := range urls {
+		s.rpcClientMap.Set(url, nil)
+	}
+
+	s.endpoints[o.GetUID()] = urls
+
+	return nil
+}
+
+func (s *endpointStore) Update(obj interface{}) error {
+	o, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+	endpoint := obj.(*v1.Endpoints)
+	news := getEthURLsFromK8sEndpoint(endpoint, s.scheme)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Add news urls
+	for _, url := range news {
+		if c := s.rpcClientMap.Get(url); c == nil {
+			s.rpcClientMap.Set(url, nil)
+		}
+	}
+
+	// Remove olds urls
+	olds := s.endpoints[o.GetUID()]
+	removed := findRemoved(olds, news)
+	for _, url := range removed {
+		s.rpcClientMap.Delete(url)
+	}
+
+	s.endpoints[o.GetUID()] = news
+
+	return nil
+}
+
+func (s *endpointStore) Delete(obj interface{}) error {
+	o, err := meta.Accessor(obj)
+	if err != nil {
+		return err
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	urls := s.endpoints[o.GetUID()]
+
+	for _, url := range urls {
+		s.rpcClientMap.Delete(url)
+	}
+
+	delete(s.endpoints, o.GetUID())
+
+	return nil
+}
+
+func (s *endpointStore) List() []interface{} {
+	return nil
+}
+
+func (s *endpointStore) ListKeys() []string {
+	return nil
+}
+
+func (s *endpointStore) Get(obj interface{}) (item interface{}, exists bool, err error) {
+	return nil, false, nil
+}
+
+func (s *endpointStore) GetByKey(key string) (item interface{}, exists bool, err error) {
+	return nil, false, nil
+}
+
+// Replace will delete the contents of the store, using instead the
+// given list.
+func (s *endpointStore) Replace(list []interface{}, _ string) error {
+	s.mutex.Lock()
+	for _, urls := range s.endpoints {
+		for _, url := range urls {
+			s.rpcClientMap.Delete(url)
+		}
+	}
+	s.endpoints = map[types.UID][]string{}
+	s.mutex.Unlock()
+
+	for _, o := range list {
+		err := s.Add(o)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *endpointStore) Resync() error {
+	return nil
+}
+
+func getEthURLsFromK8sEndpoint(e *v1.Endpoints, scheme string) []string {
+	ethURLs := make([]string, 0)
+	for _, s := range e.Subsets {
+		for _, addr := range s.Addresses {
+			for _, port := range s.Ports {
+				ethURLs = append(ethURLs, fmt.Sprintf("%s://%s:%d", scheme, addr.IP, port.Port))
+			}
+		}
+	}
+	return ethURLs
+}
+
+// findRemoved returns the string array represents the elements in olds array and removed
+// in news array.
+func findRemoved(olds, news []string) []string {
+	sort.Strings(olds)
+	sort.Strings(news)
+
+	removed := []string{}
+	for _, o := range olds {
+		find := false
+		for _, n := range news {
+			if o == n {
+				find = true
+				break
+			}
+		}
+		if !find {
+			removed = append(removed, o)
+		}
+	}
+	return removed
 }

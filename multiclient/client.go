@@ -56,9 +56,18 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		cancel:       myCancel,
 		rpcClientMap: NewMap(),
 	}
+
+	var newErr error
+	defer func() {
+		if newErr != nil {
+			// cancel go routines
+			mc.Close()
+		}
+	}()
+
 	for _, opt := range opts {
-		if err := opt(mc); err != nil {
-			return nil, err
+		if newErr = opt(mc); newErr != nil {
+			return nil, newErr
 		}
 	}
 
@@ -67,7 +76,8 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 	// Return error if have no available eth client.
 	if len(mc.rpcClientMap.List()) == 0 {
-		return nil, ErrNoEthClient
+		newErr = ErrNoEthClient
+		return nil, newErr
 	}
 
 	go mc.retrydial()
@@ -83,6 +93,14 @@ func (mc *Client) Close() {
 	for _, c := range clients {
 		c.Close()
 	}
+}
+
+func (mc *Client) Context() context.Context {
+	return mc.ctx
+}
+
+func (mc *Client) ClientMap() *Map {
+	return mc.rpcClientMap
 }
 
 func (mc *Client) EthClients() []*ethclient.Client {
