@@ -44,8 +44,7 @@ var (
 )
 
 type Client struct {
-	rpcClientMap       *Map
-	subscribeNewHeadWg sync.WaitGroup
+	rpcClientMap *Map
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
@@ -611,23 +610,25 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 		return nil, ErrNoEthClient
 	}
 
+	var subscribeNewHeadWg sync.WaitGroup
+
 	cctx, cancel := context.WithCancel(ctx)
 	for url := range clientsMap {
-		go mc.subscribeNewHead(cctx, url, ch)
+		subscribeNewHeadWg.Add(1)
+		go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, url, ch)
 	}
 
 	// TODO: handle new clients comes
 	return event.NewSubscription(func(unsub <-chan struct{}) error {
 		<-unsub
 		cancel()
-		mc.subscribeNewHeadWg.Wait()
+		subscribeNewHeadWg.Wait()
 		return nil
 	}), nil
 }
 
-func (mc *Client) subscribeNewHead(ctx context.Context, url string, ch chan<- *Header) error {
-	mc.subscribeNewHeadWg.Add(1)
-	defer mc.subscribeNewHeadWg.Done()
+func (mc *Client) subscribeNewHead(ctx context.Context, wg *sync.WaitGroup, url string, ch chan<- *Header) error {
+	defer wg.Done()
 
 	for {
 		rc := mc.rpcClientMap.Get(url)
