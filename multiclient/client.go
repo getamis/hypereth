@@ -46,6 +46,7 @@ type Client struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	rpcClientMap *Map
+	retrydialWg  sync.WaitGroup
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
@@ -89,6 +90,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 func (mc *Client) Close() {
 	// stop go routines
 	mc.cancel()
+	mc.retrydialWg.Wait()
 	clients := mc.rpcClientMap.List()
 	for _, c := range clients {
 		c.Close()
@@ -760,8 +762,12 @@ func (mc *Client) DialClients(ctx context.Context) {
 }
 
 func (mc *Client) retrydial() {
+	mc.retrydialWg.Add(1)
+	defer mc.retrydialWg.Done()
+
 	ticker := time.NewTicker(retryPeriod)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
