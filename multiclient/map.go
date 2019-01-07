@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/getamis/sirius/log"
 )
 
 type Map struct {
@@ -42,6 +43,7 @@ func (m *Map) Delete(key string) {
 		c.Close()
 	}
 	delete(m.m, key)
+	log.Trace("Eth client removed", "url", key)
 }
 
 func (m *Map) Set(key string, value *rpc.Client) {
@@ -49,6 +51,7 @@ func (m *Map) Set(key string, value *rpc.Client) {
 	defer m.lock.Unlock()
 
 	m.m[key] = value
+	log.Trace("Eth client added", "url", key)
 }
 
 func (m *Map) Replace(key string, value *rpc.Client) {

@@ -53,6 +53,12 @@ func K8sEndpointsDiscovery(namespace, name, scheme string, kubeconfig *KubeConfi
 		}
 		lw := createEndpointsListWatch(kubeClient, namespace, name)
 		store := newEndpointStore(mc.ClientMap(), scheme)
+		// Force sync at first
+		err = syncWith(&lw, store)
+		if err != nil {
+			log.Error("Failed to sync the latest endpoints", "err", err)
+			return err
+		}
 		reflector := cache.NewReflector(&lw, &v1.Endpoints{}, store, 0)
 		go reflector.Run(mc.Context().Done())
 		return nil
@@ -110,15 +116,45 @@ func createEndpointsListWatch(kubeClient clientset.Interface, ns, name string) c
 	}
 }
 
+func syncWith(lw cache.ListerWatcher, store cache.Store) error {
+	// Explicitly set "0" as resource version - it's fine for the List()
+	// to be served from cache and potentially be delayed relative to
+	// etcd contents. Reflector framework will catch up via Watch() eventually.
+	options := metav1.ListOptions{ResourceVersion: "0"}
+	list, err := lw.List(options)
+	if err != nil {
+		return err
+	}
+
+	listMetaInterface, err := meta.ListAccessor(list)
+	if err != nil {
+		return err
+	}
+
+	resourceVersion := listMetaInterface.GetResourceVersion()
+
+	items, err := meta.ExtractList(list)
+	if err != nil {
+		return err
+	}
+
+	found := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		found = append(found, item)
+	}
+	return store.Replace(found, resourceVersion)
+}
+
 // endpointStore implements the k8s.io/kubernetes/client-go/tools/cache.Store
 // interface. Instead of storing entire Kubernetes objects, it stores urls of ethclients
 // generated based on those objects.
 type endpointStore struct {
 	// Protects metrics
-	mutex        sync.RWMutex
-	scheme       string
-	endpoints    map[types.UID][]string
-	rpcClientMap *Map
+	mutex           sync.RWMutex
+	resourceVersion string
+	scheme          string
+	endpoints       map[types.UID][]string
+	rpcClientMap    *Map
 }
 
 func newEndpointStore(rpcClientMap *Map, scheme string) *endpointStore {
@@ -220,7 +256,11 @@ func (s *endpointStore) GetByKey(key string) (item interface{}, exists bool, err
 
 // Replace will delete the contents of the store, using instead the
 // given list.
-func (s *endpointStore) Replace(list []interface{}, _ string) error {
+func (s *endpointStore) Replace(list []interface{}, resourceVersion string) error {
+	if s.checkResourceVersion(resourceVersion) {
+		log.Trace("Resource version is not changed, ignore replace")
+		return nil
+	}
 	s.mutex.Lock()
 	for _, urls := range s.endpoints {
 		for _, url := range urls {
@@ -237,11 +277,20 @@ func (s *endpointStore) Replace(list []interface{}, _ string) error {
 		}
 	}
 
+	s.mutex.Lock()
+	s.resourceVersion = resourceVersion
+	s.mutex.Unlock()
 	return nil
 }
 
 func (s *endpointStore) Resync() error {
 	return nil
+}
+
+func (s *endpointStore) checkResourceVersion(rv string) bool {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.resourceVersion == rv
 }
 
 func getEthURLsFromK8sEndpoint(e *v1.Endpoints, scheme string) []string {
