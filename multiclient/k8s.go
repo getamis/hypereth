@@ -18,7 +18,6 @@ package multiclient
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/getamis/sirius/log"
@@ -164,14 +163,14 @@ func (s *endpointStore) Update(obj interface{}) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	// Add news urls
+	// Add new urls
 	for _, url := range news {
 		if c := s.rpcClientMap.Get(url); c == nil {
 			s.rpcClientMap.Set(url, nil)
 		}
 	}
 
-	// Remove olds urls
+	// Remove old urls
 	olds := s.endpoints[o.GetUID()]
 	removed := findRemoved(olds, news)
 	for _, url := range removed {
@@ -260,9 +259,6 @@ func getEthURLsFromK8sEndpoint(e *v1.Endpoints, scheme string) []string {
 // findRemoved returns the string array represents the elements in olds array and removed
 // in news array.
 func findRemoved(olds, news []string) []string {
-	sort.Strings(olds)
-	sort.Strings(news)
-
 	removed := []string{}
 	for _, o := range olds {
 		find := false

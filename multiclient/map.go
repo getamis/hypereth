@@ -38,6 +38,9 @@ func (m *Map) Delete(key string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	if c := m.m[key]; c != nil {
+		c.Close()
+	}
 	delete(m.m, key)
 }
 
