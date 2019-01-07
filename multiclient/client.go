@@ -81,6 +81,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		return nil, newErr
 	}
 
+	mc.retrydialWg.Add(1)
 	go mc.retrydial()
 
 	return mc, nil
@@ -762,7 +763,6 @@ func (mc *Client) DialClients(ctx context.Context) {
 }
 
 func (mc *Client) retrydial() {
-	mc.retrydialWg.Add(1)
 	defer mc.retrydialWg.Done()
 
 	ticker := time.NewTicker(retryPeriod)
