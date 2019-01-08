@@ -46,16 +46,19 @@ type Client struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	rpcClientMap *Map
+	newClientCh  chan string
 	retrydialWg  sync.WaitGroup
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
+	newClientCh := make(chan string)
 	// create client own context to control the internal go routines
 	myCtx, myCancel := context.WithCancel(context.Background())
 	mc := &Client{
 		ctx:          myCtx,
 		cancel:       myCancel,
-		rpcClientMap: NewMap(),
+		rpcClientMap: NewMap(newClientCh),
+		newClientCh:  newClientCh,
 	}
 
 	var newErr error
@@ -769,6 +772,8 @@ func (mc *Client) retrydial() {
 
 	for {
 		select {
+		case <-mc.newClientCh:
+			mc.DialClients(mc.ctx)
 		case <-ticker.C:
 			mc.DialClients(mc.ctx)
 		case <-mc.ctx.Done():
