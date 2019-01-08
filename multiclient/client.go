@@ -77,8 +77,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 	// Return error if have no available eth client.
 	if len(mc.rpcClientMap.List()) == 0 {
-		newErr = ErrNoEthClient
-		return nil, newErr
+		log.Warn("There is no available eth client while creating multiclient")
 	}
 
 	mc.retrydialWg.Add(1)
