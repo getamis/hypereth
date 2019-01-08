@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/getamis/sirius/log"
 )
 
 type Map struct {
@@ -38,7 +39,11 @@ func (m *Map) Delete(key string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	if c := m.m[key]; c != nil {
+		c.Close()
+	}
 	delete(m.m, key)
+	log.Trace("Eth client removed", "url", key)
 }
 
 func (m *Map) Set(key string, value *rpc.Client) {
@@ -46,6 +51,16 @@ func (m *Map) Set(key string, value *rpc.Client) {
 	defer m.lock.Unlock()
 
 	m.m[key] = value
+	log.Trace("Eth client added", "url", key)
+}
+
+func (m *Map) Replace(key string, value *rpc.Client) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if _, ok := m.m[key]; ok {
+		m.m[key] = value
+	}
 }
 
 func (m *Map) Get(key string) *rpc.Client {
@@ -99,6 +114,19 @@ func (m *Map) Keys() []string {
 	for k := range m.m {
 		urls[index] = k
 		index++
+	}
+	return urls
+}
+
+func (m *Map) NilClients() []string {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	urls := make([]string, 0)
+	for k, v := range m.m {
+		if v == nil {
+			urls = append(urls, k)
+		}
 	}
 	return urls
 }

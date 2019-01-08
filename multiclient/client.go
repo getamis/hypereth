@@ -34,72 +34,76 @@ import (
 
 const (
 	dialTimeout = 5 * time.Second
+	retryPeriod = 10 * time.Second
 )
 
 var (
 	ErrInvalidTypeCast = errors.New("invalid type cast")
 	ErrNoEthClient     = errors.New("no eth client")
-
-	retryPeriod = 10 * time.Second
 )
 
 type Client struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
 	rpcClientMap *Map
+	retrydialWg  sync.WaitGroup
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
+	// create client own context to control the internal go routines
+	myCtx, myCancel := context.WithCancel(context.Background())
 	mc := &Client{
+		ctx:          myCtx,
+		cancel:       myCancel,
 		rpcClientMap: NewMap(),
 	}
+
+	var newErr error
+	defer func() {
+		if newErr != nil {
+			// cancel go routines
+			mc.Close()
+		}
+	}()
+
 	for _, opt := range opts {
-		if err := opt(mc); err != nil {
-			return nil, err
+		if newErr = opt(mc); newErr != nil {
+			return nil, newErr
 		}
 	}
 
-	urls := mc.rpcClientMap.Keys()
-	lens := len(urls)
-	if lens == 0 {
-		return nil, ErrNoEthClient
+	// Dial each eth client
+	mc.DialClients(ctx)
+
+	// Return error if have no available eth client.
+	if len(mc.rpcClientMap.List()) == 0 {
+		newErr = ErrNoEthClient
+		return nil, newErr
 	}
 
-	log.Debug("Create multiclient", "urls", lens)
-	errCh := make(chan error, lens)
-	for _, rawURL := range urls {
-		go func(ctx context.Context, rawURL string) {
-			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
-			defer cancel()
-			c, err := rpc.DialContext(ctx, rawURL)
-			if err == nil {
-				log.Info("Connect to ethclient successfully", "url", rawURL)
-				mc.rpcClientMap.Set(rawURL, c)
-			} else {
-				log.Error("Failed to dial eth client", "rawURL", rawURL, "err", err)
-			}
-			errCh <- err
-		}(ctx, rawURL)
-	}
+	mc.retrydialWg.Add(1)
+	go mc.retrydial()
 
-	var dialErr error
-	for i := 0; i < lens; i++ {
-		err := <-errCh
-		if err != nil {
-			dialErr = err
-		}
-	}
-	if dialErr != nil {
-		mc.Close()
-		return nil, dialErr
-	}
 	return mc, nil
 }
 
 // Close closes an existing RPC connection.
 func (mc *Client) Close() {
+	// stop go routines
+	mc.cancel()
+	mc.retrydialWg.Wait()
 	clients := mc.rpcClientMap.List()
 	for _, c := range clients {
 		c.Close()
 	}
+}
+
+func (mc *Client) Context() context.Context {
+	return mc.ctx
+}
+
+func (mc *Client) ClientMap() *Map {
+	return mc.rpcClientMap
 }
 
 func (mc *Client) EthClients() []*ethclient.Client {
@@ -726,4 +730,51 @@ func postToAll(ctx context.Context, fns []postFn) error {
 		return nil
 	}
 	return lastError
+}
+
+type dialedClient struct {
+	url    string
+	client *rpc.Client
+}
+
+func (mc *Client) DialClients(ctx context.Context) {
+	urls := mc.rpcClientMap.NilClients()
+	dialCh := make(chan *dialedClient, len(urls))
+	for _, rawURL := range urls {
+		go func(rawURL string) {
+			dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+			c, err := rpc.DialContext(dialCtx, rawURL)
+			if err == nil {
+				log.Info("Connect to eth client successfully", "url", rawURL)
+			} else {
+				log.Warn("Failed to dial eth client", "url", rawURL, "err", err)
+			}
+			dialCh <- &dialedClient{url: rawURL, client: c}
+		}(rawURL)
+	}
+
+	for i := 0; i < len(urls); i++ {
+		dialed := <-dialCh
+		if dialed.client != nil {
+			mc.rpcClientMap.Replace(dialed.url, dialed.client)
+		}
+	}
+}
+
+func (mc *Client) retrydial() {
+	defer mc.retrydialWg.Done()
+
+	ticker := time.NewTicker(retryPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			mc.DialClients(mc.ctx)
+		case <-mc.ctx.Done():
+			// mc is closed, stop retry
+			return
+		}
+	}
 }
