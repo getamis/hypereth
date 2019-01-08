@@ -24,14 +24,16 @@ import (
 )
 
 type Map struct {
-	m map[string]*rpc.Client
+	m           map[string]*rpc.Client
+	newClientCh chan<- string
 
 	lock sync.RWMutex
 }
 
-func NewMap() *Map {
+func NewMap(newClientCh chan<- string) *Map {
 	return &Map{
-		m: make(map[string]*rpc.Client),
+		m:           make(map[string]*rpc.Client),
+		newClientCh: newClientCh,
 	}
 }
 
@@ -51,6 +53,12 @@ func (m *Map) Set(key string, value *rpc.Client) {
 	defer m.lock.Unlock()
 
 	m.m[key] = value
+	if m.newClientCh != nil {
+		select {
+		case m.newClientCh <- key:
+		default:
+		}
+	}
 	log.Trace("Eth client added", "url", key)
 }
 
