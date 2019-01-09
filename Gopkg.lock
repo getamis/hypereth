@@ -70,6 +70,14 @@
   version = "v0.1.0"
 
 [[projects]]
+  digest = "1:e86afb66b3ce9d2589581de8c6c5a013c6ab999c5f5a5bfa9be8fb562d0c74cd"
+  name = "github.com/cskr/pubsub"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "a1dc30a0b38055a251f1f04ceb4cc1c7207b0540"
+  version = "v1.0.1"
+
+[[projects]]
   digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -981,6 +989,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/cskr/pubsub",
     "github.com/ethereum/go-ethereum",
     "github.com/ethereum/go-ethereum/common",
     "github.com/ethereum/go-ethereum/common/hexutil",
@@ -997,7 +1006,13 @@
     "github.com/spf13/cobra",
     "github.com/spf13/viper",
     "github.com/tidwall/gjson",
+    "k8s.io/api/core/v1",
+    "k8s.io/apimachinery/pkg/api/meta",
     "k8s.io/apimachinery/pkg/apis/meta/v1",
+    "k8s.io/apimachinery/pkg/fields",
+    "k8s.io/apimachinery/pkg/runtime",
+    "k8s.io/apimachinery/pkg/types",
+    "k8s.io/apimachinery/pkg/watch",
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/plugin/pkg/client/auth",
     "k8s.io/client-go/tools/cache",

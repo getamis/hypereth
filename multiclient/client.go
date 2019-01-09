@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cskr/pubsub"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -35,6 +36,11 @@ import (
 const (
 	dialTimeout = 5 * time.Second
 	retryPeriod = 10 * time.Second
+
+	// newAvailableClientTopic represents an topic name for an eth-client is created.
+	newAvailableClientTopic = "newAvailableClient"
+	// pubSubCapacity represents the channel size to received pubSub event.
+	pubSubCapacity = 10
 )
 
 var (
@@ -47,6 +53,7 @@ type Client struct {
 	cancel       context.CancelFunc
 	rpcClientMap *Map
 	newClientCh  chan string
+	pubSub       *pubsub.PubSub
 	retrydialWg  sync.WaitGroup
 }
 
@@ -59,6 +66,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		cancel:       myCancel,
 		rpcClientMap: NewMap(newClientCh),
 		newClientCh:  newClientCh,
+		pubSub:       pubsub.New(pubSubCapacity),
 	}
 
 	var newErr error
@@ -94,6 +102,7 @@ func (mc *Client) Close() {
 	// stop go routines
 	mc.cancel()
 	mc.retrydialWg.Wait()
+	mc.pubSub.Shutdown()
 	clients := mc.rpcClientMap.List()
 	for _, c := range clients {
 		c.Close()
@@ -624,7 +633,21 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 		go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, url, ch)
 	}
 
-	// TODO: handle new clients comes
+	newClientCh := mc.pubSub.Sub(newAvailableClientTopic)
+	// handle  new clients comes
+	go func() {
+		defer mc.pubSub.Unsub(newClientCh, newAvailableClientTopic)
+		for {
+			select {
+			case url := <-newClientCh:
+				strURL := url.(string)
+				go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, strURL, ch)
+			case <-cctx.Done():
+				return
+			}
+		}
+	}()
+
 	return event.NewSubscription(func(unsub <-chan struct{}) error {
 		<-unsub
 		cancel()
@@ -653,9 +676,14 @@ func (mc *Client) subscribeNewHead(ctx context.Context, wg *sync.WaitGroup, url 
 			for {
 				select {
 				case header := <-headerCh:
-					ch <- &Header{
+					h := &Header{
 						Client: rc,
 						Header: header,
+					}
+					select {
+					case ch <- h:
+					case <-ctx.Done():
+						return nil
 					}
 				case err := <-sub.Err():
 					log.Warn("Failed during subscription", "url", url, "err", err)
@@ -760,6 +788,7 @@ func (mc *Client) DialClients(ctx context.Context) {
 		dialed := <-dialCh
 		if dialed.client != nil {
 			mc.rpcClientMap.Replace(dialed.url, dialed.client)
+			mc.pubSub.Pub(dialed.url, newAvailableClientTopic)
 		}
 	}
 }
