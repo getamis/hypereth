@@ -83,7 +83,11 @@ func getTxPoolStatus(ctx context.Context, c *ethclient.Client, timeout time.Dura
 			log.Error("Failed to retrieve metrics", "err", err)
 			return
 		}
-		parseJSONMetrics(m, txPoolStatusMetricNamePrefix, results)
+		status := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			status[k] = uint(v)
+		}
+		parseJSONMetrics(status, txPoolStatusMetricNamePrefix, results)
 	}
 }
 
@@ -96,7 +100,6 @@ func parseJSONMetrics(raw map[string]interface{}, prefix string, results map[str
 				keys = append(keys, strings.ToLower(k))
 			}
 		}
-
 		return strings.Join(keys, metricsNameSeperator)
 	})
 }

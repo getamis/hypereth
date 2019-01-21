@@ -18,15 +18,17 @@ package ethclient
 
 import (
 	"context"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// TxPoolStatus returns the status of txpool.
+// TxPoolStatus returns the hex encoding status of txpool.
 // {
-//   pending: 4954,
-//   queued: 166
+//   "pending": "0x1d5",
+//   "queued": "0x1b7"
 // }
-func (ec *Client) TxPoolStatus(ctx context.Context) (map[string]interface{}, error) {
-	r := make(map[string]interface{})
+func (ec *Client) TxPoolStatus(ctx context.Context) (map[string]hexutil.Uint, error) {
+	r := make(map[string]hexutil.Uint)
 	err := ec.c.CallContext(ctx, &r, "txpool_status")
 	if err != nil {
 		return nil, err
