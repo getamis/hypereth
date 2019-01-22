@@ -639,9 +639,10 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 		defer mc.pubSub.Unsub(newClientCh, newAvailableClientTopic)
 		for {
 			select {
-			case url := <-newClientCh:
-				strURL := url.(string)
-				go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, strURL, ch)
+			case newC := <-newClientCh:
+				url := newC.(string)
+				subscribeNewHeadWg.Add(1)
+				go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, url, ch)
 			case <-cctx.Done():
 				return
 			}
