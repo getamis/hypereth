@@ -28,7 +28,7 @@ func EthURLs(urls []string) Option {
 	return func(mc *Client) error {
 		log.Info("EthClients from static list", "urls", urls)
 		for _, url := range urls {
-			mc.ClientMap().Set(url, nil)
+			mc.ClientMap().Add(url, nil)
 		}
 		return nil
 	}

@@ -24,16 +24,27 @@ import (
 )
 
 type Map struct {
-	m           map[string]*rpc.Client
-	newClientCh chan<- string
+	// the mapping form url to client
+	clientMap map[string]*client
+	// the mapping subscription id to url
+	idMap              map[uint64]string
+	subscripionCounter uint64
+	newClientCh        chan<- string
 
 	lock sync.RWMutex
 }
 
+type client struct {
+	*rpc.Client
+	Id uint64
+}
+
 func NewMap(newClientCh chan<- string) *Map {
 	return &Map{
-		m:           make(map[string]*rpc.Client),
-		newClientCh: newClientCh,
+		clientMap:          make(map[string]*client),
+		idMap:              make(map[uint64]string),
+		subscripionCounter: 0,
+		newClientCh:        newClientCh,
 	}
 }
 
@@ -41,48 +52,76 @@ func (m *Map) Delete(key string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if c := m.m[key]; c != nil {
-		c.Close()
+	c, ok := m.clientMap[key]
+	if !ok {
+		return
 	}
-	delete(m.m, key)
-	log.Trace("Eth client removed", "url", key)
+	if c.Client != nil {
+		c.Client.Close()
+	}
+	delete(m.idMap, c.Id)
+	delete(m.clientMap, key)
+	log.Trace("Eth client removed", "c.Id", c.Id, "url", key)
 }
 
-func (m *Map) Set(key string, value *rpc.Client) {
+func (m *Map) Add(key string, value *rpc.Client) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.m[key] = value
+	m.subscripionCounter++
+	m.clientMap[key] = &client{
+		Id:     m.subscripionCounter,
+		Client: value,
+	}
+	m.idMap[m.subscripionCounter] = key
+
 	if m.newClientCh != nil {
 		select {
 		case m.newClientCh <- key:
 		default:
 		}
 	}
-	log.Trace("Eth client added", "url", key)
+	log.Trace("Eth client added", "id", m.subscripionCounter, "url", key)
 }
 
-func (m *Map) Replace(key string, value *rpc.Client) {
+func (m *Map) Replace(key string, value *rpc.Client) uint64 {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if _, ok := m.m[key]; ok {
-		m.m[key] = value
+	if _, ok := m.clientMap[key]; ok {
+		m.clientMap[key].Client = value
 	}
+
+	return m.clientMap[key].Id
 }
 
 func (m *Map) Get(key string) *rpc.Client {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	return m.m[key]
+	return m.clientMap[key].Client
+}
+
+func (m *Map) GetById(id uint64) (*rpc.Client, bool) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	key, ok := m.idMap[id]
+	if !ok {
+		return nil, false
+	}
+	c, ok := m.clientMap[key]
+	if !ok {
+		return nil, false
+	}
+	return c.Client, true
 }
 
 func (m *Map) Len() int {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	return len(m.m)
+	return len(m.clientMap)
 }
 
 // List returns a deep copy of client list
@@ -91,9 +130,9 @@ func (m *Map) List() []*rpc.Client {
 	defer m.lock.RUnlock()
 
 	l := []*rpc.Client{}
-	for _, v := range m.m {
-		if v != nil {
-			l = append(l, v)
+	for _, v := range m.clientMap {
+		if v.Client != nil {
+			l = append(l, v.Client)
 		}
 	}
 	return l
@@ -105,21 +144,34 @@ func (m *Map) Map() map[string]*rpc.Client {
 	defer m.lock.RUnlock()
 
 	newMap := map[string]*rpc.Client{}
-	for k, v := range m.m {
-		if v != nil {
-			newMap[k] = v
+	for k, v := range m.clientMap {
+		if v.Client != nil {
+			newMap[k] = v.Client
 		}
 	}
 	return newMap
+}
+
+func (m *Map) Ids() []uint64 {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	ids := make([]uint64, len(m.idMap))
+	i := 0
+	for k := range m.idMap {
+		ids[i] = k
+		i++
+	}
+	return ids
 }
 
 func (m *Map) Keys() []string {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	urls := make([]string, len(m.m))
+	urls := make([]string, len(m.clientMap))
 	index := 0
-	for k := range m.m {
+	for k := range m.clientMap {
 		urls[index] = k
 		index++
 	}
@@ -131,8 +183,8 @@ func (m *Map) NilClients() []string {
 	defer m.lock.RUnlock()
 
 	urls := make([]string, 0)
-	for k, v := range m.m {
-		if v == nil {
+	for k, v := range m.clientMap {
+		if v.Client == nil {
 			urls = append(urls, k)
 		}
 	}

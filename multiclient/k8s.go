@@ -21,7 +21,7 @@ import (
 	"sync"
 
 	"github.com/getamis/sirius/log"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -180,7 +180,7 @@ func (s *endpointStore) Add(obj interface{}) error {
 	defer s.mutex.Unlock()
 
 	for _, url := range urls {
-		s.rpcClientMap.Set(url, nil)
+		s.rpcClientMap.Add(url, nil)
 	}
 
 	s.endpoints[o.GetUID()] = urls
@@ -202,7 +202,7 @@ func (s *endpointStore) Update(obj interface{}) error {
 	// Add new urls
 	for _, url := range news {
 		if c := s.rpcClientMap.Get(url); c == nil {
-			s.rpcClientMap.Set(url, nil)
+			s.rpcClientMap.Add(url, nil)
 		}
 	}
 
