@@ -27,9 +27,9 @@ type Map struct {
 	// the mapping form url to client
 	clientMap map[string]*client
 	// the mapping subscription id to url
-	idMap              map[uint64]string
-	subscripionCounter uint64
-	newClientCh        chan<- string
+	idMap       map[uint64]string
+	idCounter   uint64
+	newClientCh chan<- string
 
 	lock sync.RWMutex
 }
@@ -41,10 +41,10 @@ type client struct {
 
 func NewMap(newClientCh chan<- string) *Map {
 	return &Map{
-		clientMap:          make(map[string]*client),
-		idMap:              make(map[uint64]string),
-		subscripionCounter: 0,
-		newClientCh:        newClientCh,
+		clientMap:   make(map[string]*client),
+		idMap:       make(map[uint64]string),
+		idCounter:   0,
+		newClientCh: newClientCh,
 	}
 }
 
@@ -68,12 +68,12 @@ func (m *Map) Add(key string, value *rpc.Client) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.subscripionCounter++
+	m.idCounter++
 	m.clientMap[key] = &client{
-		Id:     m.subscripionCounter,
+		Id:     m.idCounter,
 		Client: value,
 	}
-	m.idMap[m.subscripionCounter] = key
+	m.idMap[m.idCounter] = key
 
 	if m.newClientCh != nil {
 		select {
@@ -81,7 +81,7 @@ func (m *Map) Add(key string, value *rpc.Client) {
 		default:
 		}
 	}
-	log.Trace("Eth client added", "id", m.subscripionCounter, "url", key)
+	log.Trace("Eth client added", "id", m.idCounter, "url", key)
 }
 
 func (m *Map) Replace(key string, value *rpc.Client) uint64 {
@@ -102,19 +102,19 @@ func (m *Map) Get(key string) *rpc.Client {
 	return m.clientMap[key].Client
 }
 
-func (m *Map) GetById(id uint64) (*rpc.Client, bool) {
+func (m *Map) GetById(id uint64) (string, *rpc.Client) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
 	key, ok := m.idMap[id]
 	if !ok {
-		return nil, false
+		return "", nil
 	}
 	c, ok := m.clientMap[key]
 	if !ok {
-		return nil, false
+		return "", nil
 	}
-	return c.Client, true
+	return key, c.Client
 }
 
 func (m *Map) Len() int {
@@ -156,11 +156,11 @@ func (m *Map) Ids() []uint64 {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	ids := make([]uint64, len(m.idMap))
-	i := 0
-	for k := range m.idMap {
-		ids[i] = k
-		i++
+	ids := []uint64{}
+	for _, c := range m.clientMap {
+		if c.Client != nil {
+			ids = append(ids, c.Id)
+		}
 	}
 	return ids
 }

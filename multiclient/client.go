@@ -634,7 +634,7 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 	}
 
 	newClientCh := mc.pubSub.Sub(newAvailableClientTopic)
-	// handle  new clients comes
+	// handle new clients come
 	go func() {
 		defer mc.pubSub.Unsub(newClientCh, newAvailableClientTopic)
 		for {
@@ -661,37 +661,34 @@ func (mc *Client) subscribeNewHead(ctx context.Context, wg *sync.WaitGroup, id u
 	logger := log.New("id", id)
 	defer wg.Done()
 
+	retryTimer := time.NewTimer(0)
+	defer retryTimer.Stop()
+
 	for {
-		rc, existed := mc.rpcClientMap.GetById(id)
-		if !existed {
+		url, rc := mc.rpcClientMap.GetById(id)
+		if rc == nil {
 			logger.Trace("EthClient has been removed")
 			return nil
 		}
-		if rc == nil {
-			logger.Warn("The client is not ready, wait for a while")
-		} else {
-			// If we have error, we need to retry
-			err := doSubscribe(ctx, id, rc, ch)
-			if err == nil {
-				return nil
-			}
-		}
-
-		// retry subscribe after retryPeriod
-		t := time.NewTicker(retryPeriod)
-		select {
-		case <-t.C:
-		case <-ctx.Done():
-			t.Stop()
+		subLogger := logger.New("url", url)
+		// If we have error, we need to retry
+		err := doSubscribe(ctx, subLogger, rc, ch)
+		if err == nil {
 			return nil
 		}
-		t.Stop()
-		logger.Trace("Retry to subscribe new head")
+
+		// reset timer with retryPeriod
+		retryTimer.Reset(retryPeriod)
+		select {
+		case <-retryTimer.C:
+		case <-ctx.Done():
+			return nil
+		}
+		subLogger.Trace("Retry to subscribe new head")
 	}
 }
 
-func doSubscribe(ctx context.Context, id uint64, rc *rpc.Client, ch chan<- *Header) error {
-	logger := log.New("id", id)
+func doSubscribe(ctx context.Context, logger log.Logger, rc *rpc.Client, ch chan<- *Header) error {
 	headerCh := make(chan *types.Header)
 	c := ethclient.NewClient(rc)
 	subCtx, cancel := context.WithCancel(ctx)
