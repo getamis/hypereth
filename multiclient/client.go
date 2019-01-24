@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/cskr/pubsub"
-	"github.com/ethereum/go-ethereum"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -619,8 +619,8 @@ type Header struct {
 // SubscribeNewHead subscribes to notifications about the current blockchain head
 // on the given channel.
 func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethereum.Subscription, error) {
-	clientsMap := mc.rpcClientMap.Map()
-	lens := len(clientsMap)
+	ids := mc.rpcClientMap.Ids()
+	lens := len(ids)
 	if lens == 0 {
 		return nil, ErrNoEthClient
 	}
@@ -628,21 +628,21 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 	var subscribeNewHeadWg sync.WaitGroup
 
 	cctx, cancel := context.WithCancel(ctx)
-	for url := range clientsMap {
+	for _, id := range ids {
 		subscribeNewHeadWg.Add(1)
-		go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, url, ch)
+		go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, id, ch)
 	}
 
 	newClientCh := mc.pubSub.Sub(newAvailableClientTopic)
-	// handle  new clients comes
+	// handle new clients come
 	go func() {
 		defer mc.pubSub.Unsub(newClientCh, newAvailableClientTopic)
 		for {
 			select {
 			case newC := <-newClientCh:
-				url := newC.(string)
+				id := newC.(uint64)
 				subscribeNewHeadWg.Add(1)
-				go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, url, ch)
+				go mc.subscribeNewHead(cctx, &subscribeNewHeadWg, id, ch)
 			case <-cctx.Done():
 				return
 			}
@@ -657,46 +657,66 @@ func (mc *Client) SubscribeNewHead(ctx context.Context, ch chan<- *Header) (ethe
 	}), nil
 }
 
-func (mc *Client) subscribeNewHead(ctx context.Context, wg *sync.WaitGroup, url string, ch chan<- *Header) error {
+func (mc *Client) subscribeNewHead(ctx context.Context, wg *sync.WaitGroup, id uint64, ch chan<- *Header) error {
+	logger := log.New("id", id)
 	defer wg.Done()
 
+	retryTimer := time.NewTimer(0)
+	defer retryTimer.Stop()
+
 	for {
-		rc := mc.rpcClientMap.Get(url)
+		url, rc := mc.rpcClientMap.GetById(id)
 		if rc == nil {
-			log.Trace("EthClient has been removed", "url", url)
+			logger.Trace("EthClient has been removed")
+			return nil
+		}
+		subLogger := logger.New("url", url)
+		// If we have error, we need to retry
+		err := doSubscribe(ctx, subLogger, rc, ch)
+		if err == nil {
 			return nil
 		}
 
-		headerCh := make(chan *types.Header)
-		c := ethclient.NewClient(rc)
-		sub, err := c.SubscribeNewHead(ctx, headerCh)
-		if err != nil {
-			log.Warn("Failed to subscribe new head", "url", url, "err", err)
-		} else {
-		WAIT_NEW_HEADER:
-			for {
-				select {
-				case header := <-headerCh:
-					h := &Header{
-						Client: rc,
-						Header: header,
-					}
-					select {
-					case ch <- h:
-					case <-ctx.Done():
-						return nil
-					}
-				case err := <-sub.Err():
-					log.Warn("Failed during subscription", "url", url, "err", err)
-					break WAIT_NEW_HEADER
-				case <-ctx.Done():
-					return nil
-				}
-			}
+		// reset timer with retryPeriod
+		retryTimer.Reset(retryPeriod)
+		select {
+		case <-retryTimer.C:
+		case <-ctx.Done():
+			return nil
 		}
-		// retry subscribe after retryPeriod
-		time.Sleep(retryPeriod)
-		log.Trace("Retry to subscribe new head", "url", url)
+		subLogger.Trace("Retry to subscribe new head")
+	}
+}
+
+func doSubscribe(ctx context.Context, logger log.Logger, rc *rpc.Client, ch chan<- *Header) error {
+	headerCh := make(chan *types.Header)
+	c := ethclient.NewClient(rc)
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sub, err := c.SubscribeNewHead(subCtx, headerCh)
+	if err != nil {
+		logger.Warn("Failed to subscribe new head", "err", err)
+		return err
+	}
+	for {
+		select {
+		case header := <-headerCh:
+			h := &Header{
+				Client: rc,
+				Header: header,
+			}
+			select {
+			case ch <- h:
+			case <-subCtx.Done():
+				return nil
+			}
+		case err := <-sub.Err():
+			logger.Warn("Failed during subscription", "err", err)
+			return err
+		case <-subCtx.Done():
+			return nil
+		}
 	}
 }
 
@@ -788,8 +808,8 @@ func (mc *Client) DialClients(ctx context.Context) {
 	for i := 0; i < len(urls); i++ {
 		dialed := <-dialCh
 		if dialed.client != nil {
-			mc.rpcClientMap.Replace(dialed.url, dialed.client)
-			mc.pubSub.Pub(dialed.url, newAvailableClientTopic)
+			id := mc.rpcClientMap.Replace(dialed.url, dialed.client)
+			mc.pubSub.Pub(id, newAvailableClientTopic)
 		}
 	}
 }
