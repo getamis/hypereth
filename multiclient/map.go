@@ -61,7 +61,7 @@ func (m *Map) Delete(key string) {
 	}
 	delete(m.idMap, c.Id)
 	delete(m.clientMap, key)
-	log.Trace("Eth client removed", "c.Id", c.Id, "url", key)
+	log.Trace("Eth client removed", "id", c.Id, "url", key)
 }
 
 func (m *Map) Add(key string, value *rpc.Client) {
