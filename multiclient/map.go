@@ -99,7 +99,11 @@ func (m *Map) Get(key string) *rpc.Client {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	return m.clientMap[key].Client
+	c := m.clientMap[key]
+	if m.clientMap[key] == nil {
+		return nil
+	}
+	return c.Client
 }
 
 func (m *Map) GetById(id uint64) (string, *rpc.Client) {
