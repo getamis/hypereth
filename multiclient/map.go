@@ -61,7 +61,7 @@ func (m *Map) Delete(key string) {
 	}
 	delete(m.idMap, c.Id)
 	delete(m.clientMap, key)
-	log.Trace("Eth client removed", "c.Id", c.Id, "url", key)
+	log.Trace("Eth client removed", "id", c.Id, "url", key)
 }
 
 func (m *Map) Add(key string, value *rpc.Client) {
@@ -99,7 +99,11 @@ func (m *Map) Get(key string) *rpc.Client {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	return m.clientMap[key].Client
+	c := m.clientMap[key]
+	if c == nil {
+		return nil
+	}
+	return c.Client
 }
 
 func (m *Map) GetById(id uint64) (string, *rpc.Client) {
