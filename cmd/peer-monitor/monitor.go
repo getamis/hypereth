@@ -17,90 +17,34 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io/ioutil"
 	"net"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/getamis/sirius/log"
-
 	"github.com/getamis/hypereth/ethclient"
-)
-
-const (
-	ClientGeth   = "Geth"
-	ClientParity = "Parity"
+	"github.com/getamis/sirius/log"
 )
 
 const (
 	ctxTimeout   = 10 * time.Second
 	retryTimeout = 3 * time.Second
 	dialTimeout  = 5 * time.Second
-	fetchCount   = 25
-	fetchRound   = 10
-	clientType   = ""
-
-	drawField   = "{.DRAW}"
-	lengthField = "{.LENGTH}"
-	clientField = "{.CLIENT}"
-	fetchURL    = "https://www.ethernodes.org/network/1/data?draw={.DRAW}&columns%5B0%5D%5Bdata%5D=id&columns%5B0%5D%5Bname%5D=&columns%5B0%5D%5Bsearchable%5D=true&columns%5B0%5D%5Borderable%5D=true&columns%5B0%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B0%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B1%5D%5Bdata%5D=host&columns%5B1%5D%5Bname%5D=&columns%5B1%5D%5Bsearchable%5D=true&columns%5B1%5D%5Borderable%5D=true&columns%5B1%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B1%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B2%5D%5Bdata%5D=port&columns%5B2%5D%5Bname%5D=&columns%5B2%5D%5Bsearchable%5D=true&columns%5B2%5D%5Borderable%5D=true&columns%5B2%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B2%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B3%5D%5Bdata%5D=country&columns%5B3%5D%5Bname%5D=&columns%5B3%5D%5Bsearchable%5D=true&columns%5B3%5D%5Borderable%5D=true&columns%5B3%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B3%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B4%5D%5Bdata%5D=clientId&columns%5B4%5D%5Bname%5D=&columns%5B4%5D%5Bsearchable%5D=true&columns%5B4%5D%5Borderable%5D=true&columns%5B4%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B4%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B5%5D%5Bdata%5D=client&columns%5B5%5D%5Bname%5D=&columns%5B5%5D%5Bsearchable%5D=true&columns%5B5%5D%5Borderable%5D=true&columns%5B5%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B5%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B6%5D%5Bdata%5D=clientVersion&columns%5B6%5D%5Bname%5D=&columns%5B6%5D%5Bsearchable%5D=true&columns%5B6%5D%5Borderable%5D=true&columns%5B6%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B6%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B7%5D%5Bdata%5D=os&columns%5B7%5D%5Bname%5D=&columns%5B7%5D%5Bsearchable%5D=true&columns%5B7%5D%5Borderable%5D=true&columns%5B7%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B7%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B8%5D%5Bdata%5D=lastUpdate&columns%5B8%5D%5Bname%5D=&columns%5B8%5D%5Bsearchable%5D=true&columns%5B8%5D%5Borderable%5D=true&columns%5B8%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B8%5D%5Bsearch%5D%5Bregex%5D=false&order%5B0%5D%5Bcolumn%5D=8&order%5B0%5D%5Bdir%5D=desc&start=0&length={.LENGTH}&search%5Bvalue%5D={.CLIENT}&search%5Bregex%5D=false"
-
-	gistURL = "https://gist.githubusercontent.com/rfikki/a2ccdc1a31ff24884106da7b9e6a7453/raw/mainnet-peers-latest.txt"
 )
 
 var (
 	dialer = p2p.TCPDialer{Dialer: &net.Dialer{Timeout: dialTimeout}}
 )
 
-type nodeData struct {
-	Nodes []*node `json:"data"`
-}
-
-type node struct {
-	ID         string    `json:"id"`
-	Host       string    `json:"host"`
-	Port       int       `json:"port"`
-	ClientID   string    `json:"clientId"`
-	Client     string    `json:"client"`
-	LastUpdate time.Time `json:"lastUpdate"`
-}
-
-func ParseNode(nodeURL string) *node {
-	u, err := url.Parse(nodeURL)
-	if err != nil {
-		return nil
-	}
-	host, port, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		return nil
-	}
-	p, _ := strconv.Atoi(port)
-	return &node{
-		ID:   u.User.String(),
-		Host: host,
-		Port: p,
-	}
-}
-
-func (n *node) URL() string {
-	return fmt.Sprintf("enode://%s@%s:%d", n.ID, n.Host, n.Port)
-}
+type fetchFn func(filter map[string]bool, max int) []*enode.Node
 
 type PeerMonitor struct {
 	ethURL       string
 	minPeerCount int
 	maxPeerCount int
+	fetcher      []fetchFn
 	quit         chan struct{}
 }
 
@@ -110,6 +54,7 @@ func NewPeerMonitor(ethURL string, minPeerCount, maxPeerCount int) *PeerMonitor 
 		minPeerCount: minPeerCount,
 		maxPeerCount: maxPeerCount,
 		quit:         make(chan struct{}),
+		fetcher:      []fetchFn{fetchFromGist, fetchFromEthNodes},
 	}
 }
 
@@ -127,7 +72,6 @@ func (m *PeerMonitor) Run(monitorDuration time.Duration) error {
 				log.Error("Failed to check peer set, retry", "err", err)
 				duration = retryTimeout
 			}
-			timer.Stop()
 			timer.Reset(duration)
 		case <-m.quit:
 			return nil
@@ -161,7 +105,7 @@ func (m *PeerMonitor) RunOnce() error {
 		return nil
 	}
 
-	nodes := fetchNodes(peers, m.maxPeerCount)
+	nodes := m.fetchNodes(peers, m.maxPeerCount)
 	if len(nodes) == 0 {
 		log.Error("empty node list")
 		return errors.New("empty node list")
@@ -179,7 +123,7 @@ func (m *PeerMonitor) RunOnce() error {
 	return nil
 }
 
-func fetchNodes(curPeers []*p2p.PeerInfo, maxPeerCount int) []string {
+func (m *PeerMonitor) fetchNodes(curPeers []*p2p.PeerInfo, maxPeerCount int) []string {
 	exists := make(map[string]bool)
 	for _, p := range curPeers {
 		exists[p.ID] = true
@@ -188,148 +132,28 @@ func fetchNodes(curPeers []*p2p.PeerInfo, maxPeerCount int) []string {
 	dist := maxPeerCount - len(curPeers)
 	enodes := []string{}
 
-	addNodes := func(candidates []*node) {
+	addNodes := func(candidates []*enode.Node) {
 		for _, c := range candidates {
-			exists[c.ID] = true
-			enodes = append(enodes, c.URL())
+			exists[c.ID().String()] = true
+			enodes = append(enodes, c.String())
 		}
 	}
 
-	// fetch from white list in gist
-	addNodes(fetchFromWhiteList(exists, gistURL))
-	if len(enodes) >= dist {
-		enodes = enodes[:dist]
-		return enodes
-	}
-
-	// fetch nodes from https://www.ethernodes.org/network/1/nodes
-	for i := 0; i < fetchRound; i++ {
-		addNodes(fetchFromEthNodes(exists, i))
-		if len(enodes) >= dist {
-			enodes = enodes[:dist]
+	for _, f := range m.fetcher {
+		addNodes(f(exists, dist))
+		dist = dist - len(enodes)
+		if dist <= 0 {
 			break
 		}
 	}
-
 	return enodes
 }
 
-func dialNode(nodeURL string) error {
-	ethNode, err := enode.ParseV4(nodeURL)
-	if err != nil {
-		return err
-	}
-	conn, err := dialer.Dial(ethNode)
+func dialNode(node *enode.Node) error {
+	conn, err := dialer.Dial(node)
 	if err != nil {
 		return err
 	}
 	conn.Close()
 	return nil
-}
-
-func fetchFromEthNodes(filter map[string]bool, round int) []*node {
-	queryURL := strings.Replace(fetchURL, drawField, fmt.Sprintf("%d", round+1), -1)
-	queryURL = strings.Replace(queryURL, lengthField, fmt.Sprintf("%d", fetchCount), -1)
-	queryURL = strings.Replace(queryURL, clientField, clientType, -1)
-
-	resp, err := http.Get(queryURL)
-	if err != nil {
-		log.Error("Failed fetch node data", "url", queryURL, "err", err)
-		return nil
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Error("Failed to read response body", "err", err)
-		return nil
-	}
-	var data nodeData
-	err = json.Unmarshal(body, &data)
-	if err != nil {
-		log.Error("Failed to json unmarshal", "err", err)
-		return nil
-	}
-
-	isValid := func(n *node) bool {
-		if filter[n.ID] {
-			return false
-		}
-
-		if net.ParseIP(n.Host) == nil {
-			return false
-		}
-
-		switch n.Client {
-		case ClientGeth, ClientParity:
-		default:
-			return false
-		}
-		return true
-	}
-
-	nodeCh := make(chan *node, len(data.Nodes))
-	for _, n := range data.Nodes {
-		if !isValid(n) {
-			nodeCh <- nil
-			continue
-		}
-
-		go func(n *node) {
-			ports := []int{30303}
-			if n.Port != 30303 {
-				ports = append(ports, n.Port)
-			}
-
-			var err error
-			for _, p := range ports {
-				n.Port = p
-				err = dialNode(n.URL())
-				if err == nil {
-					break
-				}
-			}
-			if err != nil {
-				nodeCh <- nil
-			} else {
-				nodeCh <- n
-			}
-		}(n)
-	}
-	enodes := make([]*node, 0)
-	for range data.Nodes {
-		if n := <-nodeCh; n != nil {
-			enodes = append(enodes, n)
-		}
-	}
-	return enodes
-}
-
-var (
-	enodeRegExp = regexp.MustCompile(`enode:\\/\\/([0-9]|[a-z]|[A-Z])+@[0-9]+(\\.[0-9]+){3}:[0-9]+`)
-)
-
-func fetchFromWhiteList(filter map[string]bool, listURL string) []*node {
-	resp, err := http.Get(listURL)
-	if err != nil {
-		log.Error("Failed fetch node data", "url", gistURL, "err", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	enodes := make([]*node, 0)
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		nodeURLs := enodeRegExp.FindAllString(scanner.Text(), -1)
-		for _, nodeURL := range nodeURLs {
-			n := ParseNode(nodeURL)
-			if !filter[n.ID] {
-				enodes = append(enodes, n)
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		log.Error("Failed to read response body", "err", err)
-		return nil
-	}
-	return enodes
 }
