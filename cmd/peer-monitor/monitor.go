@@ -57,6 +57,7 @@ func NewPeerMonitor(ethURL string, minPeerCount, maxPeerCount int) *PeerMonitor 
 		fetcher: []fetchFn{
 			fetchFromGist,
 			fetchFromEtherscan,
+			fetchFromEthNodes,
 		},
 	}
 }
