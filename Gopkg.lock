@@ -157,15 +157,15 @@
   version = "v1.4.7"
 
 [[projects]]
-  branch = "develop"
-  digest = "1:06f927d0987240199c9051bd3bb8139380510c1d8f82d4786a484831241f3dcf"
+  digest = "1:7c50eac54892f21be7f98de8f94beb5dd925fbce79ea729485d0c760b67c7268"
   name = "github.com/getamis/sirius"
   packages = [
     "log",
     "metrics",
   ]
   pruneopts = "NUT"
-  revision = "3169265a49d667869e59ae691e34056a3dd80d0d"
+  revision = "7741ea7ccc0663b2526a929389ee8e95bdd69399"
+  version = "v1.0.10"
 
 [[projects]]
   digest = "1:a1efdbc2762667c8a41cbf02b19a0549c846bf2c1d08cad4f445e3344089f1f0"
@@ -497,6 +497,14 @@
   ]
   pruneopts = "NUT"
   revision = "fe93d378a6b03758a2c1b65e86cf630bf78681c0"
+
+[[projects]]
+  digest = "1:dd2b1b3d884037fe4d86bf06313b192e67ca3b1acb4c7b12e030f1d158d8c1a3"
+  name = "github.com/rollbar/rollbar-go"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "d450a931d7a085523b60f0f7c98487333a8ce5fa"
+  version = "v1.0.2"
 
 [[projects]]
   digest = "1:810d960260b42c751f5254f6dbff5e6c79c8047b90a9bf4a06bba479b99aff1d"

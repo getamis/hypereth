@@ -34,6 +34,10 @@ func (d *DummyRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Not support metrics.\n"))
 }
 
+func (d *DummyRegistry) NewHttpServerMetrics(opts ...Option) HttpServerMetrics {
+	return &dummyHttpMetrics{}
+}
+
 func (d *DummyRegistry) NewServerMetrics(opts ...Option) ServerMetrics {
 	return &dummyServerMetrics{}
 }
@@ -48,6 +52,14 @@ func (d *DummyRegistry) NewGauge(key string, opts ...Option) Gauge {
 
 func (d *DummyRegistry) NewHistogram(key string, opts ...Option) Histogram {
 	return &dummyHistogram{}
+}
+
+func (d *DummyRegistry) NewHistogramVec(key string, labels []string, opts ...Option) HistogramVec {
+	return &dummyHistogramVec{}
+}
+
+func (d *DummyRegistry) NewCounterVec(key string, labels []string, opts ...Option) CounterVec {
+	return &dummyCounterVec{}
 }
 
 func (d *DummyRegistry) NewTimer(key string, opts ...Option) Timer {
@@ -85,6 +97,24 @@ type dummyHistogram struct{}
 
 func (d *dummyHistogram) Observe(float64) {}
 
+type dummyHistogramVec struct{}
+
+func (d *dummyHistogramVec) GetMetricWith(MetricsLabels) (Histogram, error) {
+	return &dummyHistogram{}, nil
+}
+func (d *dummyHistogramVec) GetMetricWithLabelValues(lvs ...string) (Histogram, error) {
+	return &dummyHistogram{}, nil
+}
+
+type dummyCounterVec struct{}
+
+func (d *dummyCounterVec) GetMetricWith(MetricsLabels) (Counter, error) {
+	return &dummyCounter{}, nil
+}
+func (d *dummyCounterVec) GetMetricWithLabelValues(lvs ...string) (Counter, error) {
+	return &dummyCounter{}, nil
+}
+
 type dummyTimer struct{}
 
 func (d *dummyTimer) Observe(time.Time) {}
@@ -92,3 +122,10 @@ func (d *dummyTimer) Observe(time.Time) {}
 type dummyWorker struct{}
 
 func (d *dummyWorker) Observe(time.Time, error) {}
+
+type dummyHttpMetrics struct {
+}
+
+func (*dummyHttpMetrics) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
+	next(rw, req)
+}
