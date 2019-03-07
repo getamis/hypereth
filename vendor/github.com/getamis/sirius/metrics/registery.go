@@ -40,15 +40,22 @@ func init() {
 
 // Registry is a metrics gather
 type Registry interface {
+	NewHttpServerMetrics(opts ...Option) HttpServerMetrics
 	NewServerMetrics(opts ...Option) ServerMetrics
 	NewCounter(key string, opts ...Option) Counter
 	NewGauge(key string, opts ...Option) Gauge
 	NewHistogram(key string, opts ...Option) Histogram
+	NewHistogramVec(key string, labels []string, opts ...Option) HistogramVec
+	NewCounterVec(key string, labels []string, opts ...Option) CounterVec
 	NewTimer(key string, opts ...Option) Timer
 	NewWorker(key string, opts ...Option) Worker
 
 	// ServeHTTP is used to display all metric values through http request
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+func NewHttpServerMetrics(opts ...Option) HttpServerMetrics {
+	return DefaultRegistry.NewHttpServerMetrics(opts...)
 }
 
 func NewServerMetrics(opts ...Option) ServerMetrics {
@@ -65,6 +72,14 @@ func NewGauge(key string, opts ...Option) Gauge {
 
 func NewHistogram(key string, opts ...Option) Histogram {
 	return DefaultRegistry.NewHistogram(key, opts...)
+}
+
+func NewHistogramVec(key string, labels []string, opts ...Option) HistogramVec {
+	return DefaultRegistry.NewHistogramVec(key, labels, opts...)
+}
+
+func NewCounterVec(key string, labels []string, opts ...Option) CounterVec {
+	return DefaultRegistry.NewCounterVec(key, labels, opts...)
 }
 
 func NewTimer(key string, opts ...Option) Timer {
