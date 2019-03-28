@@ -154,6 +154,7 @@ type endpointStore struct {
 	resourceVersion string
 	scheme          string
 	endpoints       map[types.UID][]string
+	endpointsVer    map[types.UID]string
 	rpcClientMap    *Map
 }
 
@@ -161,6 +162,7 @@ func newEndpointStore(rpcClientMap *Map, scheme string) *endpointStore {
 	return &endpointStore{
 		scheme:       scheme,
 		endpoints:    map[types.UID][]string{},
+		endpointsVer: map[types.UID]string{},
 		rpcClientMap: rpcClientMap,
 	}
 }
@@ -184,6 +186,7 @@ func (s *endpointStore) Add(obj interface{}) error {
 	}
 
 	s.endpoints[o.GetUID()] = urls
+	s.endpointsVer[o.GetUID()] = o.GetResourceVersion()
 
 	return nil
 }
@@ -214,6 +217,7 @@ func (s *endpointStore) Update(obj interface{}) error {
 	}
 
 	s.endpoints[o.GetUID()] = news
+	s.endpointsVer[o.GetUID()] = o.GetResourceVersion()
 
 	return nil
 }
@@ -234,6 +238,7 @@ func (s *endpointStore) Delete(obj interface{}) error {
 	}
 
 	delete(s.endpoints, o.GetUID())
+	delete(s.endpointsVer, o.GetUID())
 
 	return nil
 }
@@ -261,17 +266,55 @@ func (s *endpointStore) Replace(list []interface{}, resourceVersion string) erro
 		log.Trace("Resource version is not changed, ignore replace")
 		return nil
 	}
+
+	adds := []interface{}{}
+	updates := []interface{}{}
+	deletes := []interface{}{}
+
 	s.mutex.Lock()
-	for _, urls := range s.endpoints {
-		for _, url := range urls {
-			s.rpcClientMap.Delete(url)
+	items := make(map[types.UID]interface{})
+	for _, obj := range list {
+		o, err := meta.Accessor(obj)
+		if err != nil {
+			s.mutex.Unlock()
+			return err
+		}
+		items[o.GetUID()] = obj
+
+		// get adds or updated objects
+		curVer, ok := s.endpointsVer[o.GetUID()]
+		if !ok {
+			adds = append(adds, o)
+		} else {
+			if o.GetResourceVersion() != curVer {
+				updates = append(updates, o)
+			}
 		}
 	}
-	s.endpoints = map[types.UID][]string{}
+	// get deleted objects
+	for uid := range s.endpointsVer {
+		if obj, ok := items[uid]; !ok {
+			deletes = append(deletes, obj)
+		}
+	}
 	s.mutex.Unlock()
 
-	for _, o := range list {
-		err := s.Add(o)
+	for _, obj := range adds {
+		err := s.Add(obj)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, obj := range updates {
+		err := s.Update(obj)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, obj := range deletes {
+		err := s.Delete(obj)
 		if err != nil {
 			return err
 		}
