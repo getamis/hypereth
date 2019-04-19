@@ -151,7 +151,7 @@ func (mc *Client) BlockByHash(ctx context.Context, hash common.Hash) (*types.Blo
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get block by hash from any eth client", "hash", hash.Hex(), "err", err)
+		log.Debug("Failed to get block by hash from any eth client", "hash", hash.Hex(), "err", err)
 		return nil, err
 	}
 	block, ok := resp.(*types.Block)
@@ -182,7 +182,7 @@ func (mc *Client) BlockByNumber(ctx context.Context, number *big.Int) (*types.Bl
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get block by number from any eth client", "number", number.String(), "err", err)
+		log.Debug("Failed to get block by number from any eth client", "number", number.String(), "err", err)
 		return nil, err
 	}
 	block, ok := resp.(*types.Block)
@@ -209,7 +209,7 @@ func (mc *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.He
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get block header by hash from any eth client", "hash", hash.Hex(), "err", err)
+		log.Debug("Failed to get block header by hash from any eth client", "hash", hash.Hex(), "err", err)
 		return nil, err
 	}
 	head, ok := resp.(*types.Header)
@@ -237,7 +237,7 @@ func (mc *Client) HeaderByNumber(ctx context.Context, number *big.Int) (*types.H
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get block header by number from any eth client", "number", number.String(), "err", err)
+		log.Debug("Failed to get block header by number from any eth client", "number", number.String(), "err", err)
 		return nil, err
 	}
 	head, ok := resp.(*types.Header)
@@ -284,7 +284,7 @@ func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *
 
 	tx, isPending, err = getFromAny(ctx, hash)
 	if err != nil {
-		log.Warn("Failed to get transaction by hash from any eth client", "hash", hash.Hex(), "err", err)
+		log.Debug("Failed to get transaction by hash from any eth client", "hash", hash.Hex(), "err", err)
 	}
 	return
 }
@@ -308,7 +308,7 @@ func (mc *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get balance from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
+		log.Debug("Failed to get balance from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
 		return nil, err
 	}
 	balance, ok := resp.(*big.Int)
@@ -336,7 +336,7 @@ func (mc *Client) CodeAt(ctx context.Context, account common.Address, blockNumbe
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get code from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
+		log.Debug("Failed to get code from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
 		return nil, err
 	}
 	code, ok := resp.([]byte)
@@ -364,7 +364,7 @@ func (mc *Client) NonceAt(ctx context.Context, account common.Address, blockNumb
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get nonce from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
+		log.Debug("Failed to get nonce from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
 		return uint64(0), err
 	}
 	nonce, ok := resp.(uint64)
@@ -393,7 +393,7 @@ func (mc *Client) PendingBalanceAt(ctx context.Context, account common.Address) 
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get pending balance from any eth client", "account", account.Hex(), "err", err)
+		log.Debug("Failed to get pending balance from any eth client", "account", account.Hex(), "err", err)
 		return nil, err
 	}
 	balance, ok := resp.(*big.Int)
@@ -421,7 +421,7 @@ func (mc *Client) PendingNonceAt(ctx context.Context, account common.Address) (u
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to get pending nonce from any eth client", "account", account.Hex(), "err", err)
+		log.Debug("Failed to get pending nonce from any eth client", "account", account.Hex(), "err", err)
 		return uint64(0), err
 	}
 	nonce, ok := resp.(uint64)
@@ -455,7 +455,7 @@ func (mc *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockN
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to call contract from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "blockNumber", blockNumber.String(), "err", err)
+		log.Debug("Failed to call contract from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "blockNumber", blockNumber.String(), "err", err)
 		return nil, err
 	}
 	hex, ok := resp.([]byte)
@@ -483,7 +483,7 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 
 	resp, err := getFromAny(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to call contract with pending state from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "err", err)
+		log.Debug("Failed to call contract with pending state from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "err", err)
 		return nil, err
 	}
 	hex, ok := resp.([]byte)
@@ -513,7 +513,7 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 
 	err := postToAll(ctx, fns)
 	if err != nil {
-		log.Warn("Failed to send transaction to any eth client", "txHash", tx.Hash().Hex(), "err", err)
+		log.Debug("Failed to send transaction to any eth client", "txHash", tx.Hash().Hex(), "err", err)
 		return err
 	}
 	return nil
@@ -556,7 +556,7 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 	}
 
 	if err != nil {
-		log.Warn("Failed to perform a JSON-RPC call on any eth client", "err", err)
+		log.Debug("Failed to perform a JSON-RPC call on any eth client", "err", err)
 		return err
 	}
 
@@ -604,7 +604,7 @@ func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rp
 	}
 
 	if err != nil {
-		log.Warn("Failed to perform batch JSON-RPC calls on any eth client", "err", err)
+		log.Debug("Failed to perform batch JSON-RPC calls on any eth client", "err", err)
 		return err
 	}
 	return nil
