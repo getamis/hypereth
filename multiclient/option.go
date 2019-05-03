@@ -17,6 +17,8 @@
 package multiclient
 
 import (
+	"time"
+
 	"github.com/getamis/sirius/log"
 )
 
@@ -30,6 +32,38 @@ func EthURLs(urls []string) Option {
 		for _, url := range urls {
 			mc.ClientMap().Add(url, nil)
 		}
+		return nil
+	}
+}
+
+var (
+	defaultRetryTimeout = 5 * time.Second
+	defaultRetryDelay   = 1 * time.Second
+)
+
+type RetryConfig struct {
+	// Limit is the total retry times. Set to 0 means retry time is according to the number of eth clients.
+	Limit int
+	// Timeout is the timeout for each retry. Set to 0 means use default timeout 5 seconds.
+	Timeout time.Duration
+	// Delay is the delay duration for each retry. Set to 0 means use default delay 1 second.
+	Delay time.Duration
+}
+
+// WithRetryConfig configures the parameters for request retry.
+func WithRetryConfig(retry RetryConfig) Option {
+	return func(mc *Client) error {
+		log.Info("Use given retry config", "retryLimit", retry.Limit, "retryTimeout", retry.Timeout, "retryDelay", retry.Delay)
+		if retry.Timeout == 0 {
+			log.Info("Use default retry timeout: 5 second")
+			retry.Timeout = defaultRetryTimeout
+		}
+		if retry.Delay == 0 {
+			log.Info("Use default retry delay: 1 second")
+			retry.Delay = defaultRetryDelay
+		}
+
+		mc.requestRetryFunc = NewRetry(retry.Limit, retry.Timeout, retry.Delay)
 		return nil
 	}
 }
