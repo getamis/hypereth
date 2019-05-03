@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"net"
 	"sync"
 	"time"
 
@@ -480,19 +481,37 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	if len(clients) == 0 {
 		return ErrNoEthClient
 	}
-	fns := make([]postFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) error {
-			return ec.SendTransaction(ctx, tx)
+
+	respCh := make(chan error, len(clients))
+
+	for _, c := range clients {
+		go func(c *rpc.Client) {
+			ec := ethclient.NewClient(c)
+			err := ec.SendTransaction(ctx, tx)
+			respCh <- err
+		}(c)
+	}
+
+	var errs []error
+	for i := 0; i < len(clients); i++ {
+		respErr := <-respCh
+		if respErr != nil {
+			errs = append(errs, respErr)
 		}
 	}
 
-	err := postToAll(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to send transaction to any eth client", "txHash", tx.Hash().Hex(), "err", err)
+	if len(errs) == len(clients) {
+		log.Debug("Failed to send transaction", "txHash", tx.Hash().Hex(), "errs", errs)
+		// return non connection error
+		var err error
+		for _, err = range errs {
+			if _, ok := err.(*net.OpError); !ok {
+				return err
+			}
+		}
 		return err
 	}
+
 	return nil
 }
 
@@ -662,37 +681,6 @@ func doSubscribe(ctx context.Context, logger log.Logger, rc *rpc.Client, ch chan
 			return nil
 		}
 	}
-}
-
-type postFn func(ctx context.Context) error
-
-func postToAll(ctx context.Context, fns []postFn) error {
-	respCh := make(chan error, len(fns))
-	for _, fn := range fns {
-		go func(fn postFn) {
-			err := fn(ctx)
-			if err != nil {
-				respCh <- err
-				return
-			}
-			respCh <- nil
-		}(fn)
-	}
-
-	errCnt := 0
-	var lastError error
-	for i := 0; i < len(fns); i++ {
-		respErr := <-respCh
-		if respErr != nil {
-			lastError = respErr
-			errCnt++
-		}
-	}
-	// at least one success
-	if errCnt < len(fns) {
-		return nil
-	}
-	return lastError
 }
 
 type dialedClient struct {
