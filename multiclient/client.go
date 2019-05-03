@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"net"
 	"sync"
 	"time"
 
@@ -49,12 +50,13 @@ var (
 )
 
 type Client struct {
-	ctx          context.Context
-	cancel       context.CancelFunc
-	rpcClientMap *Map
-	newClientCh  chan string
-	pubSub       *pubsub.PubSub
-	retrydialWg  sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
+	rpcClientMap     *Map
+	newClientCh      chan string
+	pubSub           *pubsub.PubSub
+	retrydialWg      sync.WaitGroup
+	requestRetryFunc func(context.Context, []*rpc.Client, RetryFunc) error
 }
 
 func New(ctx context.Context, opts ...Option) (*Client, error) {
@@ -62,11 +64,12 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	// create client own context to control the internal go routines
 	myCtx, myCancel := context.WithCancel(context.Background())
 	mc := &Client{
-		ctx:          myCtx,
-		cancel:       myCancel,
-		rpcClientMap: NewMap(newClientCh),
-		newClientCh:  newClientCh,
-		pubSub:       pubsub.New(pubSubCapacity),
+		ctx:              myCtx,
+		cancel:           myCancel,
+		rpcClientMap:     NewMap(newClientCh),
+		newClientCh:      newClientCh,
+		pubSub:           pubsub.New(pubSubCapacity),
+		requestRetryFunc: NewRetry(0, defaultRetryTimeout, defaultRetryDelay),
 	}
 
 	var newErr error
@@ -141,25 +144,24 @@ func (mc *Client) BlockByHash(ctx context.Context, hash common.Hash) (*types.Blo
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.BlockByHash(ctx, hash)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get block by hash from any eth client", "hash", hash.Hex(), "err", err)
-		return nil, err
+	var result *types.Block
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.BlockByHash(ctx, hash)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get block by hash", "hash", hash.Hex(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	block, ok := resp.(*types.Block)
-	if !ok {
-		log.Error("Failed to cast type to *types.Block")
-		return nil, ErrInvalidTypeCast
-	}
-	return block, nil
+	return result, nil
 }
 
 // BlockByNumber returns a block from the current canonical chain. If number is nil, the
@@ -172,25 +174,24 @@ func (mc *Client) BlockByNumber(ctx context.Context, number *big.Int) (*types.Bl
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.BlockByNumber(ctx, number)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get block by number from any eth client", "number", number.String(), "err", err)
-		return nil, err
+	var result *types.Block
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.BlockByNumber(ctx, number)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get block by number", "number", number.String(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	block, ok := resp.(*types.Block)
-	if !ok {
-		log.Error("Failed to cast type to *types.Block")
-		return nil, ErrInvalidTypeCast
-	}
-	return block, nil
+	return result, nil
 }
 
 // HeaderByHash returns the block header with the given hash.
@@ -199,25 +200,24 @@ func (mc *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.He
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.HeaderByHash(ctx, hash)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get block header by hash from any eth client", "hash", hash.Hex(), "err", err)
-		return nil, err
+	var result *types.Header
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.HeaderByHash(ctx, hash)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get block header by hash", "hash", hash.Hex(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	head, ok := resp.(*types.Header)
-	if !ok {
-		log.Error("Failed to cast type to *types.Header")
-		return nil, ErrInvalidTypeCast
-	}
-	return head, nil
+	return result, nil
 }
 
 // HeaderByNumber returns a block header from the current canonical chain. If number is
@@ -227,66 +227,51 @@ func (mc *Client) HeaderByNumber(ctx context.Context, number *big.Int) (*types.H
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.HeaderByNumber(ctx, number)
+
+	var result *types.Header
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.HeaderByNumber(ctx, number)
+		if err != nil {
+			errs = append(errs, err)
 		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get block header by number", "number", number.String(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get block header by number from any eth client", "number", number.String(), "err", err)
-		return nil, err
-	}
-	head, ok := resp.(*types.Header)
-	if !ok {
-		log.Error("Failed to cast type to *types.Header")
-		return nil, ErrInvalidTypeCast
-	}
-	return head, nil
-}
-
-type txResponse struct {
-	tx        *types.Transaction
-	isPending bool
-	err       error
+	return result, nil
 }
 
 // TransactionByHash returns the transaction with the given hash.
-func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
+func (mc *Client) TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
 	clients := mc.rpcClientMap.List()
 	if len(clients) == 0 {
 		return nil, false, ErrNoEthClient
 	}
-	getFromAny := func(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
-		respCh := make(chan *txResponse, len(clients))
-		for _, c := range clients {
-			go func(ec *ethclient.Client) {
-				tx, isPending, err := ec.TransactionByHash(ctx, hash)
-				if err != nil {
-					respCh <- &txResponse{err: err}
-					return
-				}
-				respCh <- &txResponse{tx: tx, isPending: isPending}
-			}(ethclient.NewClient(c))
-		}
-		var resp *txResponse
-		for i := 0; i < len(clients); i++ {
-			resp = <-respCh
-			if resp.err == nil {
-				break
-			}
-		}
-		return resp.tx, resp.isPending, resp.err
-	}
 
-	tx, isPending, err = getFromAny(ctx, hash)
-	if err != nil {
-		log.Debug("Failed to get transaction by hash from any eth client", "hash", hash.Hex(), "err", err)
+	var result *types.Transaction
+	var isPending bool
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, isPending, err = ec.TransactionByHash(ctx, hash)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get transaction by hash", "hash", hash.Hex(), "finalErr", finalErr, "errs", errs)
+		return nil, false, finalErr
 	}
-	return
+	return result, isPending, nil
 }
 
 // State Access
@@ -298,25 +283,24 @@ func (mc *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.BalanceAt(ctx, account, blockNumber)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get balance from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
-		return nil, err
+	var result *big.Int
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.BalanceAt(ctx, account, blockNumber)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get balance", "account", account.Hex(), "blockNumber", blockNumber.String(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	balance, ok := resp.(*big.Int)
-	if !ok {
-		log.Error("Failed to cast type to *big.Int")
-		return nil, ErrInvalidTypeCast
-	}
-	return balance, nil
+	return result, nil
 }
 
 // CodeAt returns the contract code of the given account.
@@ -326,25 +310,24 @@ func (mc *Client) CodeAt(ctx context.Context, account common.Address, blockNumbe
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.CodeAt(ctx, account, blockNumber)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get code from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
-		return nil, err
+	var result []byte
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.CodeAt(ctx, account, blockNumber)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get code", "account", account.Hex(), "blockNumber", blockNumber.String(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	code, ok := resp.([]byte)
-	if !ok {
-		log.Error("Failed to cast type to []byte")
-		return nil, ErrInvalidTypeCast
-	}
-	return code, nil
+	return result, nil
 }
 
 // NonceAt returns the account nonce of the given account.
@@ -354,25 +337,24 @@ func (mc *Client) NonceAt(ctx context.Context, account common.Address, blockNumb
 	if len(clients) == 0 {
 		return 0, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.NonceAt(ctx, account, blockNumber)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get nonce from any eth client", "account", account.Hex(), "blockNumber", blockNumber.String(), "err", err)
-		return uint64(0), err
+	var result uint64
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.NonceAt(ctx, account, blockNumber)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get nonce", "account", account.Hex(), "blockNumber", blockNumber.String(), "finalErr", finalErr, "errs", errs)
+		return uint64(0), finalErr
 	}
-	nonce, ok := resp.(uint64)
-	if !ok {
-		log.Error("Failed to cast type to uint64")
-		return uint64(0), ErrInvalidTypeCast
-	}
-	return nonce, nil
+	return result, nil
 }
 
 // Pending State
@@ -383,25 +365,24 @@ func (mc *Client) PendingBalanceAt(ctx context.Context, account common.Address) 
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.PendingBalanceAt(ctx, account)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get pending balance from any eth client", "account", account.Hex(), "err", err)
-		return nil, err
+	var result *big.Int
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.PendingBalanceAt(ctx, account)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get pending balance", "account", account.Hex(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	balance, ok := resp.(*big.Int)
-	if !ok {
-		log.Error("Failed to cast type to *big.Int")
-		return nil, ErrInvalidTypeCast
-	}
-	return balance, nil
+	return result, nil
 }
 
 // PendingNonceAt returns the account nonce of the given account in the pending state.
@@ -411,25 +392,24 @@ func (mc *Client) PendingNonceAt(ctx context.Context, account common.Address) (u
 	if len(clients) == 0 {
 		return 0, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.PendingNonceAt(ctx, account)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to get pending nonce from any eth client", "account", account.Hex(), "err", err)
-		return uint64(0), err
+	var result uint64
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.PendingNonceAt(ctx, account)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to get pending nonce", "account", account.Hex(), "finalErr", finalErr, "errs", errs)
+		return uint64(0), finalErr
 	}
-	nonce, ok := resp.(uint64)
-	if !ok {
-		log.Error("Failed to cast type to uint64")
-		return uint64(0), ErrInvalidTypeCast
-	}
-	return nonce, nil
+	return result, nil
 }
 
 // Contract Calling
@@ -445,25 +425,24 @@ func (mc *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockN
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.CallContract(ctx, msg, blockNumber)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to call contract from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "blockNumber", blockNumber.String(), "err", err)
-		return nil, err
+	var result []byte
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.CallContract(ctx, msg, blockNumber)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to call contract", "from", msg.From.Hex(), "to", msg.To.Hex(), "blockNumber", blockNumber.String(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	hex, ok := resp.([]byte)
-	if !ok {
-		log.Error("Failed to cast type to []byte")
-		return nil, ErrInvalidTypeCast
-	}
-	return hex, nil
+	return result, nil
 }
 
 // PendingCallContract executes a message call transaction using the EVM.
@@ -473,25 +452,24 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 	if len(clients) == 0 {
 		return nil, ErrNoEthClient
 	}
-	fns := make([]getFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) (interface{}, error) {
-			return ec.PendingCallContract(ctx, msg)
-		}
-	}
 
-	resp, err := getFromAny(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to call contract with pending state from any eth client", "from", msg.From.Hex(), "to", msg.To.Hex(), "err", err)
-		return nil, err
+	var result []byte
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		ec := ethclient.NewClient(rpcClient)
+		var err error
+		result, err = ec.PendingCallContract(ctx, msg)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to call contract with pending state", "from", msg.From.Hex(), "to", msg.To.Hex(), "finalErr", finalErr, "errs", errs)
+		return nil, finalErr
 	}
-	hex, ok := resp.([]byte)
-	if !ok {
-		log.Error("Failed to cast type to []byte")
-		return nil, ErrInvalidTypeCast
-	}
-	return hex, nil
+	return result, nil
 }
 
 // SendTransaction injects a signed transaction into the pending pool for execution.
@@ -503,19 +481,37 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	if len(clients) == 0 {
 		return ErrNoEthClient
 	}
-	fns := make([]postFn, len(clients))
-	for i, c := range clients {
-		ec := ethclient.NewClient(c)
-		fns[i] = func(ctx context.Context) error {
-			return ec.SendTransaction(ctx, tx)
+
+	respCh := make(chan error, len(clients))
+
+	for _, c := range clients {
+		go func(c *rpc.Client) {
+			ec := ethclient.NewClient(c)
+			err := ec.SendTransaction(ctx, tx)
+			respCh <- err
+		}(c)
+	}
+
+	var errs []error
+	for i := 0; i < len(clients); i++ {
+		respErr := <-respCh
+		if respErr != nil {
+			errs = append(errs, respErr)
 		}
 	}
 
-	err := postToAll(ctx, fns)
-	if err != nil {
-		log.Debug("Failed to send transaction to any eth client", "txHash", tx.Hash().Hex(), "err", err)
+	if len(errs) == len(clients) {
+		log.Debug("Failed to send transaction", "txHash", tx.Hash().Hex(), "errs", errs)
+		// return non connection error
+		var err error
+		for _, err = range errs {
+			if _, ok := err.(*net.OpError); !ok {
+				return err
+			}
+		}
 		return err
 	}
+
 	return nil
 }
 
@@ -524,42 +520,25 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 //
 // The result must be a pointer so that package json can unmarshal into it. You
 // can also pass nil, in which case the result is ignored.
-//
-// `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
-// Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
-// FIXME: The `result` may be overrode to wrong value because we share a `result` in all goroutines.
-func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result interface{}, method string, args ...interface{}) error {
+func (mc *Client) CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error {
 	clients := mc.rpcClientMap.List()
 	if len(clients) == 0 {
 		return ErrNoEthClient
 	}
-	var err error
-	if !isPostToAll {
-		fns := make([]getFn, len(clients))
-		for i := range clients {
-			c := clients[i]
-			fns[i] = func(ctx context.Context) (interface{}, error) {
-				err := c.CallContext(ctx, result, method, args...)
-				return nil, err
-			}
-		}
-		_, err = getFromAny(ctx, fns)
-	} else {
-		fns := make([]postFn, len(clients))
-		for i := range clients {
-			c := clients[i]
-			fns[i] = func(ctx context.Context) error {
-				return c.CallContext(ctx, result, method, args...)
-			}
-		}
-		err = postToAll(ctx, fns)
-	}
 
-	if err != nil {
-		log.Debug("Failed to perform a JSON-RPC call on any eth client", "err", err)
-		return err
-	}
+	var errs []error
 
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		err := rpcClient.CallContext(ctx, result, method, args...)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to perform a JSON-RPC call", "finalErr", finalErr, "errs", errs)
+		return finalErr
+	}
 	return nil
 }
 
@@ -572,40 +551,24 @@ func (mc *Client) CallContext(ctx context.Context, isPostToAll bool, result inte
 // Error field of the corresponding BatchElem.
 //
 // Note that batch calls may not be executed atomically on the server side.
-//
-// `isPostToAll` is true means waiting until received all responsese of JSON-RPC calls and return error if failed to perform JSON-RPC call to all eth client.
-// Otherwise, just waiting for the first successful response and return error if failed to perform JSON-RPC call to all eth client.
-// FIXME: The result may be overrode to wrong value because we share a `result` in all goroutines.
-func (mc *Client) BatchCallContext(ctx context.Context, isPostToAll bool, b []rpc.BatchElem) error {
-	var err error
+func (mc *Client) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
 	clients := mc.rpcClientMap.List()
 	if len(clients) == 0 {
 		return ErrNoEthClient
 	}
-	if !isPostToAll {
-		fns := make([]getFn, len(clients))
-		for i := range clients {
-			c := clients[i]
-			fns[i] = func(ctx context.Context) (interface{}, error) {
-				err := c.BatchCallContext(ctx, b)
-				return nil, err
-			}
-		}
-		_, err = getFromAny(ctx, fns)
-	} else {
-		fns := make([]postFn, len(clients))
-		for i := range clients {
-			c := clients[i]
-			fns[i] = func(ctx context.Context) error {
-				return c.BatchCallContext(ctx, b)
-			}
-		}
-		err = postToAll(ctx, fns)
-	}
 
-	if err != nil {
-		log.Debug("Failed to perform batch JSON-RPC calls on any eth client", "err", err)
-		return err
+	var errs []error
+
+	finalErr := mc.requestRetryFunc(ctx, clients, func(ctx context.Context, rpcClient *rpc.Client) (bool, error) {
+		err := rpcClient.BatchCallContext(ctx, b)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		return true, err
+	})
+	if finalErr != nil {
+		log.Debug("Failed to perform batch JSON-RPC calls", "finalErr", finalErr, "errs", errs)
+		return finalErr
 	}
 	return nil
 }
@@ -718,69 +681,6 @@ func doSubscribe(ctx context.Context, logger log.Logger, rc *rpc.Client, ch chan
 			return nil
 		}
 	}
-}
-
-type getFn func(ctx context.Context) (interface{}, error)
-
-type getResponse struct {
-	data interface{}
-	err  error
-}
-
-func getFromAny(ctx context.Context, fns []getFn) (interface{}, error) {
-	respCh := make(chan *getResponse, len(fns))
-	getCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	for _, fn := range fns {
-		go func(fn getFn) {
-			data, err := fn(getCtx)
-			if err != nil {
-				respCh <- &getResponse{err: err}
-				return
-			}
-			respCh <- &getResponse{data: data}
-		}(fn)
-	}
-
-	var resp *getResponse
-	for i := 0; i < len(fns); i++ {
-		resp = <-respCh
-		if resp.err == nil {
-			break
-		}
-	}
-	return resp.data, resp.err
-}
-
-type postFn func(ctx context.Context) error
-
-func postToAll(ctx context.Context, fns []postFn) error {
-	respCh := make(chan error, len(fns))
-	for _, fn := range fns {
-		go func(fn postFn) {
-			err := fn(ctx)
-			if err != nil {
-				respCh <- err
-				return
-			}
-			respCh <- nil
-		}(fn)
-	}
-
-	errCnt := 0
-	var lastError error
-	for i := 0; i < len(fns); i++ {
-		respErr := <-respCh
-		if respErr != nil {
-			lastError = respErr
-			errCnt++
-		}
-	}
-	// at least one success
-	if errCnt < len(fns) {
-		return nil
-	}
-	return lastError
 }
 
 type dialedClient struct {
