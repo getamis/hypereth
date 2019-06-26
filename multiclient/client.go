@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"math/big"
-	"net"
 	"sync"
 	"time"
 
@@ -473,6 +472,7 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 }
 
 // SendTransaction injects a signed transaction into the pending pool for execution.
+// Return all errors if multiple errors have occurred.
 //
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
@@ -502,14 +502,7 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 
 	if len(errs) == len(clients) {
 		log.Debug("Failed to send transaction", "txHash", tx.Hash().Hex(), "errs", errs)
-		// return non connection error
-		var err error
-		for _, err = range errs {
-			if _, ok := err.(*net.OpError); !ok {
-				return err
-			}
-		}
-		return err
+		return NewMultipleError(errs)
 	}
 
 	return nil
