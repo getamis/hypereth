@@ -477,19 +477,20 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	clients := mc.rpcClientMap.List()
+	clients := mc.rpcClientMap.Map()
 	if len(clients) == 0 {
 		return ErrNoEthClient
 	}
 
 	respCh := make(chan error, len(clients))
 
-	for _, c := range clients {
-		go func(c *rpc.Client) {
+	for url, c := range clients {
+		go func(url string, c *rpc.Client) {
 			ec := ethclient.NewClient(c)
 			err := ec.SendTransaction(ctx, tx)
-			respCh <- err
-		}(c)
+			clientErr := NewClientError(url, err)
+			respCh <- clientErr
+		}(url, c)
 	}
 
 	var errs []error
