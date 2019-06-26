@@ -18,6 +18,26 @@ package multiclient
 
 import "strings"
 
+type ClientError struct {
+	client string
+	err    error
+}
+
+func NewClientError(client string, err error) *ClientError {
+	return &ClientError{
+		client: client,
+		err:    err,
+	}
+}
+
+func (e *ClientError) Error() string {
+	return e.err.Error()
+}
+
+func (e *ClientError) Client() string {
+	return e.client
+}
+
 type MultipleError struct {
 	errs []error
 }
