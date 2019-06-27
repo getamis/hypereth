@@ -16,17 +16,26 @@
 
 package multiclient
 
-import "strings"
+import (
+	"math/big"
+	"strings"
+)
+
+const (
+	unknownClient = "no client"
+)
 
 type ClientError struct {
-	client string
-	err    error
+	client      string
+	blockNumber *big.Int
+	err         error
 }
 
-func NewClientError(client string, err error) *ClientError {
+func NewClientError(client string, blockNumber *big.Int, err error) *ClientError {
 	return &ClientError{
-		client: client,
-		err:    err,
+		client:      client,
+		blockNumber: blockNumber,
+		err:         err,
 	}
 }
 
@@ -38,11 +47,19 @@ func (e *ClientError) Client() string {
 	return e.client
 }
 
-type MultipleError struct {
-	errs []error
+func (e *ClientError) BlockNumber() *big.Int {
+	return e.blockNumber
 }
 
-func NewMultipleError(errs []error) *MultipleError {
+func (e *ClientError) GetError() error {
+	return e.err
+}
+
+type MultipleError struct {
+	errs []*ClientError
+}
+
+func NewMultipleError(errs []*ClientError) *MultipleError {
 	return &MultipleError{
 		errs: errs,
 	}
@@ -57,6 +74,6 @@ func (e *MultipleError) Error() string {
 	return strings.Join(errstrs, ",")
 }
 
-func (e *MultipleError) GetErrors() []error {
+func (e *MultipleError) GetErrors() []*ClientError {
 	return e.errs
 }

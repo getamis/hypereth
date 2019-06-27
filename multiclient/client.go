@@ -476,24 +476,34 @@ func (mc *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 //
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
-func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) *MultipleError {
 	clients := mc.rpcClientMap.Map()
 	if len(clients) == 0 {
-		return ErrNoEthClient
+		return NewMultipleError([]*ClientError{NewClientError(unknownClient, nil, ErrNoEthClient)})
 	}
 
-	respCh := make(chan error, len(clients))
+	respCh := make(chan *ClientError, len(clients))
 
 	for url, c := range clients {
 		go func(url string, c *rpc.Client) {
 			ec := ethclient.NewClient(c)
 			err := ec.SendTransaction(ctx, tx)
-			clientErr := NewClientError(url, err)
+			var clientErr *ClientError
+			if err != nil {
+				var blockNumber *big.Int
+				header, berr := ec.HeaderByNumber(ctx, nil)
+				if berr != nil {
+					log.Debug("Failed to get latest block number for debug after failed to send tx", "client", url, "err", berr)
+				} else {
+					blockNumber = header.Number
+				}
+				clientErr = NewClientError(url, blockNumber, err)
+			}
 			respCh <- clientErr
 		}(url, c)
 	}
 
-	var errs []error
+	var errs []*ClientError
 	for i := 0; i < len(clients); i++ {
 		respErr := <-respCh
 		if respErr != nil {
