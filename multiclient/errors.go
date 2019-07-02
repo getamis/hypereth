@@ -38,6 +38,10 @@ func (e *ClientError) Client() string {
 	return e.client
 }
 
+func (e *ClientError) GetError() error {
+	return e.err
+}
+
 type MultipleError struct {
 	errs []error
 }
