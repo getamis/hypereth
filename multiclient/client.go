@@ -488,7 +488,10 @@ func (mc *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 		go func(url string, c *rpc.Client) {
 			ec := ethclient.NewClient(c)
 			err := ec.SendTransaction(ctx, tx)
-			clientErr := NewClientError(url, err)
+			var clientErr *ClientError
+			if err != nil {
+				clientErr = NewClientError(url, err)
+			}
 			respCh <- clientErr
 		}(url, c)
 	}
