@@ -1,4 +1,4 @@
-// Copyright 2018 AMIS Technologies
+// Copyright 2019 AMIS Technologies
 // This file is part of the hypereth library.
 //
 // The hypereth library is free software: you can redistribute it and/or modify
@@ -14,52 +14,42 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package peermonitor
 
 import (
 	"bufio"
-	"fmt"
 	"net/http"
+	"regexp"
 
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/getamis/sirius/log"
 )
 
-const (
-	maxEtherscanPage = 10
-	etherscanURL     = "https://etherscan.io/nodetracker/nodes?p=%d"
+var (
+	enodeRegExp = regexp.MustCompile(`enode:\/\/([0-9]|[a-z]|[A-Z])+@[0-9]+(\.[0-9]+){3}:[0-9]+`)
+
+	gistURLMap = map[string]string{
+		ChainNetworkMainnet: "https://gist.githubusercontent.com/rfikki/a2ccdc1a31ff24884106da7b9e6a7453/raw/mainnet-peers-latest.txt",
+		ChainNetworkRopsten: "https://gist.githubusercontent.com/rfikki/31393c66b59f906a9a2e5a84215e8b00/raw/constantinople-ropsten-peers.txt",
+	}
 )
 
-func fetchFromEtherscan(filter map[string]bool, max int) []*enode.Node {
-	log.Trace("Start to fetch enodes from etherscan")
-	totalFilter := make(map[string]bool)
-	for k, v := range filter {
-		totalFilter[k] = v
+func GetGistFetcher(network string) fetchFn {
+	return func(filter map[string]bool, max int) []*enode.Node {
+		return fetchFromGist(filter, max, network)
 	}
-	enodes := make([]*enode.Node, 0)
-	for i := 1; i <= maxEtherscanPage; i++ {
-		newNodes := fetchFromEtherscanByPage(totalFilter, i)
-		enodes = append(enodes, newNodes...)
-		if len(enodes) >= max {
-			enodes = enodes[:max]
-			break
-		}
-		// update totalFilter for next round
-		for _, n := range newNodes {
-			totalFilter[n.ID().String()] = true
-		}
-	}
-	log.Trace("Finished to fetch enodes from etherscan", "nodeCount", len(enodes))
-	return enodes
 }
 
-func fetchFromEtherscanByPage(filter map[string]bool, page int) []*enode.Node {
-	log.Trace("Fetch enodes from etherscan by page", "page", page)
-	queryURL := fmt.Sprintf(etherscanURL, page)
-
-	resp, err := http.Get(queryURL)
+func fetchFromGist(filter map[string]bool, max int, network string) []*enode.Node {
+	gistURL := gistURLMap[network]
+	if gistURL == "" {
+		log.Debug("Unsupported chain network for gist", "network", network)
+		return nil
+	}
+	log.Trace("Start to fetch enodes from gist", "network", network)
+	resp, err := http.Get(gistURL)
 	if err != nil {
-		log.Error("Failed fetch node data", "url", queryURL, "err", err)
+		log.Error("Failed fetch node data from gist", "url", gistURL, "err", err)
 		return nil
 	}
 	defer resp.Body.Close()
@@ -104,5 +94,9 @@ func fetchFromEtherscanByPage(filter map[string]bool, page int) []*enode.Node {
 			enodes = append(enodes, n)
 		}
 	}
+	if len(enodes) >= max {
+		enodes = enodes[:max]
+	}
+	log.Trace("Finished to fetch enodes from gist", "nodeCount", len(enodes))
 	return enodes
 }
