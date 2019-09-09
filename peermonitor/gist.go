@@ -41,8 +41,8 @@ func GetGistFetcher(network string) fetchFn {
 }
 
 func fetchFromGist(filter map[string]bool, max int, network string) []*enode.Node {
-	gistURL := gistURLMap[network]
-	if gistURL == "" {
+	gistURL, ok := gistURLMap[network]
+	if !ok {
 		log.Debug("Unsupported chain network for gist", "network", network)
 		return nil
 	}
