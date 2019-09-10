@@ -1,4 +1,4 @@
-// Copyright 2018 AMIS Technologies
+// Copyright 2019 AMIS Technologies
 // This file is part of the hypereth library.
 //
 // The hypereth library is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package peermonitor
 
 import (
 	"bufio"
@@ -25,16 +25,28 @@ import (
 	"github.com/getamis/sirius/log"
 )
 
-const (
-	gistURL = "https://gist.githubusercontent.com/rfikki/a2ccdc1a31ff24884106da7b9e6a7453/raw/mainnet-peers-latest.txt"
-)
-
 var (
 	enodeRegExp = regexp.MustCompile(`enode:\/\/([0-9]|[a-z]|[A-Z])+@[0-9]+(\.[0-9]+){3}:[0-9]+`)
+
+	gistURLMap = map[string]string{
+		ChainNetworkMainnet: "https://gist.githubusercontent.com/rfikki/a2ccdc1a31ff24884106da7b9e6a7453/raw/mainnet-peers-latest.txt",
+		ChainNetworkRopsten: "https://gist.githubusercontent.com/rfikki/31393c66b59f906a9a2e5a84215e8b00/raw/constantinople-ropsten-peers.txt",
+	}
 )
 
-func fetchFromGist(filter map[string]bool, max int) []*enode.Node {
-	log.Trace("Start to fetch enodes from gist")
+func GetGistFetcher(network string) fetchFn {
+	return func(filter map[string]bool, max int) []*enode.Node {
+		return fetchFromGist(filter, max, network)
+	}
+}
+
+func fetchFromGist(filter map[string]bool, max int, network string) []*enode.Node {
+	gistURL, ok := gistURLMap[network]
+	if !ok {
+		log.Debug("Unsupported chain network for gist", "network", network)
+		return nil
+	}
+	log.Trace("Start to fetch enodes from gist", "network", network)
 	resp, err := http.Get(gistURL)
 	if err != nil {
 		log.Error("Failed fetch node data from gist", "url", gistURL, "err", err)

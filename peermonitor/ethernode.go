@@ -1,4 +1,4 @@
-// Copyright 2018 AMIS Technologies
+// Copyright 2019 AMIS Technologies
 // This file is part of the hypereth library.
 //
 // The hypereth library is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package peermonitor
 
 import (
 	"encoding/json"
@@ -42,7 +42,12 @@ const (
 	drawField   = "{.DRAW}"
 	lengthField = "{.LENGTH}"
 	clientField = "{.CLIENT}"
-	fetchURL    = "https://www.ethernodes.org/network/1/data?draw={.DRAW}&columns%5B0%5D%5Bdata%5D=id&columns%5B0%5D%5Bname%5D=&columns%5B0%5D%5Bsearchable%5D=true&columns%5B0%5D%5Borderable%5D=true&columns%5B0%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B0%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B1%5D%5Bdata%5D=host&columns%5B1%5D%5Bname%5D=&columns%5B1%5D%5Bsearchable%5D=true&columns%5B1%5D%5Borderable%5D=true&columns%5B1%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B1%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B2%5D%5Bdata%5D=port&columns%5B2%5D%5Bname%5D=&columns%5B2%5D%5Bsearchable%5D=true&columns%5B2%5D%5Borderable%5D=true&columns%5B2%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B2%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B3%5D%5Bdata%5D=country&columns%5B3%5D%5Bname%5D=&columns%5B3%5D%5Bsearchable%5D=true&columns%5B3%5D%5Borderable%5D=true&columns%5B3%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B3%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B4%5D%5Bdata%5D=clientId&columns%5B4%5D%5Bname%5D=&columns%5B4%5D%5Bsearchable%5D=true&columns%5B4%5D%5Borderable%5D=true&columns%5B4%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B4%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B5%5D%5Bdata%5D=client&columns%5B5%5D%5Bname%5D=&columns%5B5%5D%5Bsearchable%5D=true&columns%5B5%5D%5Borderable%5D=true&columns%5B5%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B5%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B6%5D%5Bdata%5D=clientVersion&columns%5B6%5D%5Bname%5D=&columns%5B6%5D%5Bsearchable%5D=true&columns%5B6%5D%5Borderable%5D=true&columns%5B6%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B6%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B7%5D%5Bdata%5D=os&columns%5B7%5D%5Bname%5D=&columns%5B7%5D%5Bsearchable%5D=true&columns%5B7%5D%5Borderable%5D=true&columns%5B7%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B7%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B8%5D%5Bdata%5D=lastUpdate&columns%5B8%5D%5Bname%5D=&columns%5B8%5D%5Bsearchable%5D=true&columns%5B8%5D%5Borderable%5D=true&columns%5B8%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B8%5D%5Bsearch%5D%5Bregex%5D=false&order%5B0%5D%5Bcolumn%5D=8&order%5B0%5D%5Bdir%5D=desc&start=0&length={.LENGTH}&search%5Bvalue%5D={.CLIENT}&search%5Bregex%5D=false"
+)
+
+var (
+	etherNodeURLMap = map[string]string{
+		ChainNetworkMainnet: "https://www.ethernodes.org/network/1/data?draw={.DRAW}&columns%5B0%5D%5Bdata%5D=id&columns%5B0%5D%5Bname%5D=&columns%5B0%5D%5Bsearchable%5D=true&columns%5B0%5D%5Borderable%5D=true&columns%5B0%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B0%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B1%5D%5Bdata%5D=host&columns%5B1%5D%5Bname%5D=&columns%5B1%5D%5Bsearchable%5D=true&columns%5B1%5D%5Borderable%5D=true&columns%5B1%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B1%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B2%5D%5Bdata%5D=port&columns%5B2%5D%5Bname%5D=&columns%5B2%5D%5Bsearchable%5D=true&columns%5B2%5D%5Borderable%5D=true&columns%5B2%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B2%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B3%5D%5Bdata%5D=country&columns%5B3%5D%5Bname%5D=&columns%5B3%5D%5Bsearchable%5D=true&columns%5B3%5D%5Borderable%5D=true&columns%5B3%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B3%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B4%5D%5Bdata%5D=clientId&columns%5B4%5D%5Bname%5D=&columns%5B4%5D%5Bsearchable%5D=true&columns%5B4%5D%5Borderable%5D=true&columns%5B4%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B4%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B5%5D%5Bdata%5D=client&columns%5B5%5D%5Bname%5D=&columns%5B5%5D%5Bsearchable%5D=true&columns%5B5%5D%5Borderable%5D=true&columns%5B5%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B5%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B6%5D%5Bdata%5D=clientVersion&columns%5B6%5D%5Bname%5D=&columns%5B6%5D%5Bsearchable%5D=true&columns%5B6%5D%5Borderable%5D=true&columns%5B6%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B6%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B7%5D%5Bdata%5D=os&columns%5B7%5D%5Bname%5D=&columns%5B7%5D%5Bsearchable%5D=true&columns%5B7%5D%5Borderable%5D=true&columns%5B7%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B7%5D%5Bsearch%5D%5Bregex%5D=false&columns%5B8%5D%5Bdata%5D=lastUpdate&columns%5B8%5D%5Bname%5D=&columns%5B8%5D%5Bsearchable%5D=true&columns%5B8%5D%5Borderable%5D=true&columns%5B8%5D%5Bsearch%5D%5Bvalue%5D=&columns%5B8%5D%5Bsearch%5D%5Bregex%5D=false&order%5B0%5D%5Bcolumn%5D=8&order%5B0%5D%5Bdir%5D=desc&start=0&length={.LENGTH}&search%5Bvalue%5D={.CLIENT}&search%5Bregex%5D=false",
+	}
 )
 
 type ethernodeData struct {
@@ -61,15 +66,26 @@ func (n *ethernode) URL() string {
 	return fmt.Sprintf("enode://%s@%s:%d", n.ID, n.Host, n.Port)
 }
 
-func fetchFromEthNodes(filter map[string]bool, max int) []*enode.Node {
-	log.Trace("Start to fetch enodes from ethernode")
+func GetEthNodesFetcher(network string) fetchFn {
+	return func(filter map[string]bool, max int) []*enode.Node {
+		return fetchFromEthNodes(filter, max, network)
+	}
+}
+
+func fetchFromEthNodes(filter map[string]bool, max int, network string) []*enode.Node {
+	etherNodeURL, ok := etherNodeURLMap[network]
+	if !ok {
+		log.Debug("Unsupported chain network for ethnodes", "network", network)
+		return nil
+	}
+	log.Trace("Start to fetch enodes from ethernode", "network", network)
 	totalFilter := make(map[string]bool)
 	for k, v := range filter {
 		totalFilter[k] = v
 	}
 	enodes := make([]*enode.Node, 0)
 	for i := 0; i < fetchRound; i++ {
-		newNodes := fetchFromEthNodesByRound(totalFilter, i)
+		newNodes := fetchFromEthNodesByRound(totalFilter, i, etherNodeURL)
 		enodes = append(enodes, newNodes...)
 		if len(enodes) >= max {
 			enodes = enodes[:max]
@@ -84,7 +100,7 @@ func fetchFromEthNodes(filter map[string]bool, max int) []*enode.Node {
 	return enodes
 }
 
-func fetchFromEthNodesByRound(filter map[string]bool, round int) []*enode.Node {
+func fetchFromEthNodesByRound(filter map[string]bool, round int, fetchURL string) []*enode.Node {
 	log.Trace("Fetch enodes from ethernode by round", "round", round)
 	queryURL := strings.Replace(fetchURL, drawField, fmt.Sprintf("%d", round+1), -1)
 	queryURL = strings.Replace(queryURL, lengthField, fmt.Sprintf("%d", fetchCount), -1)

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getamis/hypereth/peermonitor"
 	"github.com/getamis/sirius/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,6 +31,7 @@ import (
 
 const (
 	ethURLFlag          = "eth.url"
+	chainNetworkFlag    = "eth.chain"
 	monitorDurationFlag = "monitor.duration"
 	minPeerCountFlag    = "peercount.min"
 	maxPeerCountFlag    = "peercount.max"
@@ -37,7 +39,8 @@ const (
 
 var (
 	// flags for ethereum service
-	ethURL string
+	ethURL       string
+	chainNetwork string
 	// flags for monitor
 	monitorDuration time.Duration
 	minPeerCount    int
@@ -49,7 +52,7 @@ var ServerCmd = &cobra.Command{
 	Short: "peer-monitor runs peer monitor",
 	Long:  `The Ethereum peer monitor. Need to open admin api for peer monitor`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		peerMonitor := NewPeerMonitor(ethURL, minPeerCount, maxPeerCount)
+		peerMonitor := peermonitor.NewPeerMonitor(ethURL, minPeerCount, maxPeerCount, chainNetwork)
 
 		go func() {
 			sigs := make(chan os.Signal, 1)
@@ -74,7 +77,7 @@ var onceCmd = &cobra.Command{
 	Short: "once runs peer monitor once",
 	Long:  `once runs peer monitor once`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		peerMonitor := NewPeerMonitor(ethURL, minPeerCount, maxPeerCount)
+		peerMonitor := peermonitor.NewPeerMonitor(ethURL, minPeerCount, maxPeerCount, chainNetwork)
 		return peerMonitor.RunOnce()
 	},
 }
@@ -93,6 +96,7 @@ func init() {
 
 	// eth-client flags
 	ServerCmd.PersistentFlags().String(ethURLFlag, "ws://127.0.0.1:8546", "The Ethereum endpoint to connect to")
+	ServerCmd.PersistentFlags().String(chainNetworkFlag, "mainnet", "The Ethereum chain network")
 	ServerCmd.PersistentFlags().Int(minPeerCountFlag, 5, "Minimum number of peer count")
 	ServerCmd.PersistentFlags().Int(maxPeerCountFlag, 15, "Maximum number of peer count")
 
@@ -111,6 +115,7 @@ func initViper() {
 func assignVarFromViper() {
 	// eth-client flags
 	ethURL = viper.GetString(ethURLFlag)
+	chainNetwork = viper.GetString(chainNetworkFlag)
 	monitorDuration = viper.GetDuration(monitorDurationFlag)
 	minPeerCount = viper.GetInt(minPeerCountFlag)
 	maxPeerCount = viper.GetInt(maxPeerCountFlag)

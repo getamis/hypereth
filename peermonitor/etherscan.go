@@ -1,4 +1,4 @@
-// Copyright 2018 AMIS Technologies
+// Copyright 2019 AMIS Technologies
 // This file is part of the hypereth library.
 //
 // The hypereth library is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the hypereth library. If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package peermonitor
 
 import (
 	"bufio"
