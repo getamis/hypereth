@@ -30,7 +30,7 @@ var (
 
 	gistURLMap = map[string]string{
 		ChainNetworkMainnet: "https://gist.githubusercontent.com/rfikki/a2ccdc1a31ff24884106da7b9e6a7453/raw/mainnet-peers-latest.txt",
-		ChainNetworkRopsten: "https://gist.githubusercontent.com/rfikki/31393c66b59f906a9a2e5a84215e8b00/raw/constantinople-ropsten-peers.txt",
+		ChainNetworkRopsten: "https://gist.githubusercontent.com/rfikki/c895641b6405c082f68bcf139cf2f7ae/raw/ropsten-peers-latest.txt",
 	}
 )
 
