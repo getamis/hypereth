@@ -19,4 +19,5 @@ package peermonitor
 const (
 	ChainNetworkMainnet = "mainnet"
 	ChainNetworkRopsten = "ropsten"
+	ChainNetworkRinkeby = "rinkeby"
 )
